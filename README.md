@@ -2,14 +2,16 @@
 
 <div align="center">
 
-**一个为 GitHub 资源优化的 React + TypeScript CDN 节点选择器**
+**一个灵活的 React + TypeScript CDN 节点选择器**
+
+支持 GitHub、Cloudflare、NPM 和自定义 CDN 源
 
 [![npm version](https://img.shields.io/npm/v/hx-cdn-forge.svg?style=flat-square)](https://www.npmjs.com/package/hx-cdn-forge)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3%2B-blue?style=flat-square)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18%2B-61dafb?style=flat-square)](https://reactjs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-[功能特性](#功能特性) • [快速开始](#快速开始) • [API 文档](#api-文档) • [示例](#示例) • [为什么选择 HX-CDN-Forge](#为什么选择-hx-cdn-forge)
+[功能特性](#功能特性) • [快速开始](#快速开始) • [使用场景](#使用场景) • [API 文档](#api-文档) • [示例](#示例)
 
 </div>
 
@@ -17,7 +19,7 @@
 
 ## 功能特性
 
-HX-CDN-Forge 是一个专为 GitHub 资源设计的 CDN 智能选择器，解决了 jsDelivr 等国际 CDN 在中国大陆访问不稳定的问题。
+HX-CDN-Forge 是一个灵活的 CDN 智能选择器，支持多种 CDN 源类型，解决了静态资源访问不稳定的问题。
 
 ### 🚀 核心功能
 
@@ -27,18 +29,16 @@ HX-CDN-Forge 是一个专为 GitHub 资源设计的 CDN 智能选择器，解决
 - **📊 延迟排序显示** - 节点按延迟时间排序，一目了然
 - **💾 持久化存储** - 用户选择自动保存，下次访问自动恢复
 - **🛡️ TypeScript 支持** - 完整的类型定义，开发体验友好
-- **🌏 中国友好** - 内置多个中国大陆可访问的 CDN 镜像
+- **🌏 多源支持** - 支持 GitHub、Cloudflare Workers、NPM、自定义 CDN
 
-### 📦 内置 CDN 节点
+### 📦 支持的 CDN 源类型
 
-| CDN 名称 | 节点位置 | 特点 |
-|---------|---------|------|
-| **jsDelivr (Main)** | 全球 | 官方主节点，最稳定 |
-| **jsDelivr (Fastly)** | 全球 | Fastly 节点，备用 |
-| **jsDelivr (Testing)** | 全球 | 测试节点 |
-| **JSD Mirror** | 中国大陆 | 国内镜像，访问速度快 |
-| **Zstatic** | 中国大陆 | 国内镜像，稳定性好 |
-| **GitHub Raw** | 全球 | 官方源，速度较慢 |
+| 源类型 | 说明 | 预设节点 |
+|-------|------|---------|
+| **GitHub** | GitHub 仓库资源（raw files、releases、archives） | jsDelivr、JSD Mirror、Zstatic、GitHub Raw |
+| **Cloudflare** | Cloudflare Workers 代理 GitHub 资源 | 自定义 Worker 域名 |
+| **NPM** | NPM 包资源 | jsDelivr、unpkg、esm.sh |
+| **Custom** | 完全自定义 CDN 配置 | 自定义 URL 构建逻辑 |
 
 ---
 
@@ -54,26 +54,28 @@ yarn add hx-cdn-forge
 pnpm add hx-cdn-forge
 ```
 
-### 基础使用
+---
+
+## 使用场景
+
+### 场景 1: GitHub 资源加速
+
+加速访问 GitHub 仓库中的文件（图片、音频、视频等）。
 
 ```tsx
 import { CDNProvider, CDNNodeSelector, useCDNUrl, createGitHubCDNConfig } from 'hx-cdn-forge';
 import 'hx-cdn-forge/dist/styles.css';
 
 function App() {
-  // 配置 GitHub 仓库信息
   const config = createGitHubCDNConfig({
-    githubUser: 'your-username',
-    githubRepo: 'your-repo',
+    githubUser: 'HengXin666',
+    githubRepo: 'HX-CDN-Forge',
     githubRef: 'main', // 或使用 commit hash
   });
 
   return (
     <CDNProvider config={config}>
-      {/* CDN 节点选择器组件 */}
       <CDNNodeSelector />
-      
-      {/* 使用 CDN URL */}
       <MyContent />
     </CDNProvider>
   );
@@ -84,18 +86,226 @@ function MyContent() {
   
   return (
     <div>
-      <img src={getCdnUrl('/static/img/logo.png')} alt="Logo" />
+      <img src={getCdnUrl('/screenshots/initial-load.png')} alt="截图" />
       <audio src={getCdnUrl('/music/song.mp3')} controls />
     </div>
   );
 }
 ```
 
+**预设的 GitHub CDN 节点**：
+- jsDelivr (Main) - 全球节点
+- jsDelivr (Fastly) - Fastly CDN
+- jsDelivr (Testing) - 测试节点
+- JSD Mirror - 中国大陆镜像
+- Zstatic - 中国大陆镜像
+- GitHub Raw - 官方源
+
+---
+
+### 场景 2: Cloudflare Workers 代理 GitHub
+
+使用 Cloudflare Workers 代理 GitHub 资源，在中国大陆访问速度更快。
+
+**步骤 1: 部署 gh-proxy 到 Cloudflare Workers**
+
+```bash
+# 1. 访问 https://workers.cloudflare.com/
+# 2. 创建 Worker
+# 3. 复制 gh-proxy 代码（https://github.com/hadis898/gh-proxy）
+# 4. 部署后获得域名，例如：your-worker.workers.dev
+```
+
+**步骤 2: 在项目中使用**
+
+```tsx
+import { CDNProvider, CDNNodeSelector, useCDNUrl, createCloudflareCDNConfig } from 'hx-cdn-forge';
+import 'hx-cdn-forge/dist/styles.css';
+
+function App() {
+  const config = createCloudflareCDNConfig({
+    workerDomain: 'your-worker.workers.dev', // 你的 Worker 域名
+    githubUser: 'HengXin666',
+    githubRepo: 'HX-CDN-Forge',
+    githubRef: 'main',
+  });
+
+  return (
+    <CDNProvider config={config}>
+      <CDNNodeSelector />
+      <MyContent />
+    </CDNProvider>
+  );
+}
+
+function MyContent() {
+  const getCdnUrl = useCDNUrl();
+  
+  // 使用方式与 GitHub CDN 相同
+  return <img src={getCdnUrl('/screenshots/initial-load.png')} alt="截图" />;
+}
+```
+
+**Cloudflare Workers 优势**：
+- 完全免费（每天 10 万次请求）
+- 无需服务器
+- 自带全球 CDN 加速
+- 在中国大陆访问速度快
+- 支持所有 GitHub 资源类型
+
+---
+
+### 场景 3: NPM 包资源加速
+
+加速访问 NPM 包中的文件。
+
+```tsx
+import { CDNProvider, CDNNodeSelector, useCDNUrl, createNPMCDNConfig } from 'hx-cdn-forge';
+import 'hx-cdn-forge/dist/styles.css';
+
+function App() {
+  const config = createNPMCDNConfig({
+    npmPackage: 'react',
+    npmVersion: '18.2.0', // 可选，默认 latest
+  });
+
+  return (
+    <CDNProvider config={config}>
+      <CDNNodeSelector />
+      <MyContent />
+    </CDNProvider>
+  );
+}
+
+function MyContent() {
+  const getCdnUrl = useCDNUrl();
+  
+  // 获取 React 包中的文件
+  return <script src={getCdnUrl('/umd/react.production.min.js')} />;
+}
+```
+
+**预设的 NPM CDN 节点**：
+- jsDelivr (NPM)
+- unpkg
+- esm.sh
+
+---
+
+### 场景 4: 混合多种 CDN 源
+
+在一个应用中混合使用多种 CDN 源。
+
+```tsx
+import {
+  CDNProvider,
+  CDNNodeSelector,
+  useCDNUrl,
+  createMixedCDNConfig,
+  CDN_NODE_TEMPLATES,
+} from 'hx-cdn-forge';
+import 'hx-cdn-forge/dist/styles.css';
+
+function App() {
+  // 创建自定义节点列表
+  const customNodes = [
+    // GitHub CDN 节点
+    CDN_NODE_TEMPLATES.github.jsd_mirror,
+    CDN_NODE_TEMPLATES.github.zstatic,
+    
+    // Cloudflare Worker 节点
+    CDN_NODE_TEMPLATES.cloudflare.createWorkerNode('your-worker.workers.dev'),
+    
+    // NPM CDN 节点
+    CDN_NODE_TEMPLATES.npm.unpkg,
+    
+    // 完全自定义节点
+    {
+      id: 'my-custom-cdn',
+      name: '我的自定义 CDN',
+      baseUrl: 'https://cdn.example.com',
+      region: 'china',
+      sourceType: 'custom',
+      buildUrl: (baseUrl, resourcePath, context) => {
+        // 自定义 URL 构建逻辑
+        return `${baseUrl}${resourcePath}`;
+      },
+    },
+  ];
+
+  const config = createMixedCDNConfig({
+    nodes: customNodes,
+    context: {
+      githubUser: 'HengXin666',
+      githubRepo: 'HX-CDN-Forge',
+      githubRef: 'main',
+      npmPackage: 'react',
+      npmVersion: '18.2.0',
+    },
+  });
+
+  return (
+    <CDNProvider config={config}>
+      <CDNNodeSelector />
+      <MyContent />
+    </CDNProvider>
+  );
+}
+```
+
+---
+
+### 场景 5: 完全自定义 CDN
+
+构建完全自定义的 CDN 配置。
+
+```tsx
+import { CDNProvider, CDNNode, createMixedCDNConfig } from 'hx-cdn-forge';
+
+const customNodes: CDNNode[] = [
+  {
+    id: 'aliyun-oss',
+    name: '阿里云 OSS',
+    baseUrl: 'https://your-bucket.oss-cn-beijing.aliyuncs.com',
+    region: 'china',
+    sourceType: 'custom',
+    buildUrl: (baseUrl, resourcePath) => {
+      const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+      return `${baseUrl}${cleanPath}`;
+    },
+  },
+  {
+    id: 'tencent-cos',
+    name: '腾讯云 COS',
+    baseUrl: 'https://your-bucket.cos.ap-guangzhou.myqcloud.com',
+    region: 'china',
+    sourceType: 'custom',
+    buildUrl: (baseUrl, resourcePath) => {
+      const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+      return `${baseUrl}${cleanPath}`;
+    },
+  },
+];
+
+const config = createMixedCDNConfig({
+  nodes: customNodes,
+  context: {
+    customConfig: {
+      // 自定义配置
+      enableAuth: true,
+      authToken: 'xxx',
+    },
+  },
+});
+```
+
 ---
 
 ## API 文档
 
-### 1. `createGitHubCDNConfig(options)`
+### 配置创建函数
+
+#### `createGitHubCDNConfig(options)`
 
 创建 GitHub CDN 配置。
 
@@ -105,47 +315,86 @@ const config = createGitHubCDNConfig({
   githubRepo: string;      // GitHub 仓库名
   githubRef: string;       // 分支名或 commit hash
   cdnNodes?: CDNNode[];    // 可选，自定义 CDN 节点列表
+  defaultNodeId?: string;  // 可选，默认节点 ID
 });
 ```
 
-### 2. `<CDNProvider>`
+#### `createCloudflareCDNConfig(options)`
 
-CDN 上下文提供者，必须包裹在组件树顶层。
+创建 Cloudflare Worker CDN 配置。
 
-```tsx
-<CDNProvider config={config}>
-  {children}
-</CDNProvider>
-```
-
-### 3. `<CDNNodeSelector>`
-
-CDN 节点选择器 UI 组件。
-
-**Props:**
 ```typescript
-interface CDNNodeSelectorProps {
-  showRefreshButton?: boolean;    // 是否显示刷新按钮，默认 true
-  autoTestOnMount?: boolean;      // 挂载时自动测速，默认 true
-  className?: string;             // 自定义样式类名
-}
+const config = createCloudflareCDNConfig({
+  workerDomain: string;    // Worker 域名，例如：'your-worker.workers.dev'
+  githubUser?: string;     // 可选，GitHub 用户名
+  githubRepo?: string;     // 可选，GitHub 仓库名
+  githubRef?: string;      // 可选，分支名或 commit hash
+  additionalNodes?: CDNNode[]; // 可选，额外的节点
+});
 ```
 
-### 4. `useCDNUrl()`
+#### `createNPMCDNConfig(options)`
 
-获取 CDN URL 构建函数的 Hook。
+创建 NPM CDN 配置。
+
+```typescript
+const config = createNPMCDNConfig({
+  npmPackage: string;      // NPM 包名
+  npmVersion?: string;     // 可选，版本号，默认 latest
+  cdnNodes?: CDNNode[];    // 可选，自定义 CDN 节点列表
+});
+```
+
+#### `createMixedCDNConfig(options)`
+
+创建混合 CDN 配置。
+
+```typescript
+const config = createMixedCDNConfig({
+  nodes: CDNNode[];        // CDN 节点列表
+  context?: CDNContext;    // 可选，上下文信息
+});
+```
+
+### CDN 节点模板
+
+#### `CDN_NODE_TEMPLATES`
+
+预设的 CDN 节点模板。
+
+```typescript
+// GitHub CDN 节点
+CDN_NODE_TEMPLATES.github.jsdelivr_main
+CDN_NODE_TEMPLATES.github.jsdelivr_fastly
+CDN_NODE_TEMPLATES.github.jsdelivr_testing
+CDN_NODE_TEMPLATES.github.jsd_mirror
+CDN_NODE_TEMPLATES.github.zstatic
+CDN_NODE_TEMPLATES.github.github_raw
+
+// Cloudflare CDN 节点
+CDN_NODE_TEMPLATES.cloudflare.createWorkerNode(domain: string)
+CDN_NODE_TEMPLATES.cloudflare.public_proxy
+
+// NPM CDN 节点
+CDN_NODE_TEMPLATES.npm.jsdelivr_npm
+CDN_NODE_TEMPLATES.npm.unpkg
+CDN_NODE_TEMPLATES.npm.esm_sh
+```
+
+### React Hooks
+
+#### `useCDNUrl()`
+
+获取 CDN URL 构建函数。
 
 ```typescript
 const getCdnUrl = useCDNUrl();
-
-// 使用
 const url = getCdnUrl('/path/to/file.png');
-// 返回: https://cdn.jsdelivr.net/gh/user/repo@main/path/to/file.png
 ```
 
-### 5. `useCDNStatus()`
+#### `useCDNStatus()`
 
-获取 CDN 状态的 Hook。
+获取 CDN 状态和控制函数。
 
 ```typescript
 const { 
@@ -157,162 +406,76 @@ const {
 } = useCDNStatus();
 ```
 
----
+### React Components
 
-## 示例
+#### `<CDNProvider>`
 
-### 示例 1: 基础集成
+CDN 上下文提供者。
 
 ```tsx
-import { CDNProvider, CDNNodeSelector, useCDNUrl, createGitHubCDNConfig } from 'hx-cdn-forge';
-import 'hx-cdn-forge/dist/styles.css';
-
-const config = createGitHubCDNConfig({
-  githubUser: 'facebook',
-  githubRepo: 'react',
-  githubRef: 'main',
-});
-
-function App() {
-  return (
-    <CDNProvider config={config}>
-      <header>
-        <CDNNodeSelector />
-      </header>
-      <MainContent />
-    </CDNProvider>
-  );
-}
+<CDNProvider config={config}>
+  {children}
+</CDNProvider>
 ```
 
-### 示例 2: 自定义 CDN 节点
+#### `<CDNNodeSelector>`
+
+CDN 节点选择器 UI 组件。
 
 ```tsx
-import { CDNProvider, CDNNode } from 'hx-cdn-forge';
-
-const customNodes: CDNNode[] = [
-  {
-    id: 'my-custom-cdn',
-    name: '我的自定义 CDN',
-    baseUrl: 'https://my-cdn.example.com',
-    region: 'asia',
-    buildUrl: (baseUrl, githubPath) => `${baseUrl}${githubPath}`,
-  },
-];
-
-const config = createGitHubCDNConfig({
-  githubUser: 'user',
-  githubRepo: 'repo',
-  githubRef: 'v1.0.0',
-  cdnNodes: customNodes,
-});
-```
-
-### 示例 3: 编程式控制
-
-```tsx
-function CDNController() {
-  const { currentNode, nodeLatencies, testLatencies, selectNode } = useCDNStatus();
-
-  const handleRefresh = async () => {
-    await testLatencies();
-  };
-
-  const handleSelectBest = () => {
-    const bestNode = Object.entries(nodeLatencies)
-      .filter(([_, latency]) => latency !== null)
-      .sort((a, b) => a[1]! - b[1]!)[0];
-    
-    if (bestNode) {
-      selectNode(bestNode[0]);
-    }
-  };
-
-  return (
-    <div>
-      <p>当前节点: {currentNode?.name}</p>
-      <button onClick={handleRefresh}>刷新测速</button>
-      <button onClick={handleSelectBest}>选择最快节点</button>
-    </div>
-  );
-}
-```
-
-### 示例 4: 结合 Docusaurus 使用
-
-```tsx
-// docusaurus.config.js
-import { CDNProvider, createGitHubCDNConfig } from 'hx-cdn-forge';
-
-const config = createGitHubCDNConfig({
-  githubUser: 'your-username',
-  githubRepo: 'your-docs',
-  githubRef: 'main',
-});
-
-// 在 swizzle 后的 Layout 组件中
-function Layout({ children }) {
-  return (
-    <CDNProvider config={config}>
-      <LayoutComponent>
-        {children}
-      </LayoutComponent>
-    </CDNProvider>
-  );
-}
+<CDNNodeSelector 
+  showRefreshButton={true}
+  autoTestOnMount={true}
+  className="my-selector"
+/>
 ```
 
 ---
 
 ## 为什么选择 HX-CDN-Forge
 
-### 问题背景
-
-在中国大陆访问 GitHub 资源时，经常遇到以下问题：
-
-1. **jsDelivr 不稳定** - 官方 jsDelivr CDN 在国内访问速度波动大，偶尔完全无法访问
-2. **缺乏自动切换机制** - 传统方案仅在 CDN 失败时被动降级，无法主动选择最优节点
-3. **用户无法感知延迟** - 用户不知道哪个 CDN 更快，只能被动接受
-4. **缺乏可视化界面** - 没有友好的 UI 让用户手动选择节点
-
-### HX-CDN-Forge 的解决方案
-
-| 问题 | HX-CDN-Forge 的解决方案 |
-|------|----------------------|
-| jsDelivr 不稳定 | 内置多个国内镜像（JSD Mirror、Zstatic），自动测速选择 |
-| 缺乏自动切换 | 首次加载自动测速，选择延迟最低的节点 |
-| 用户无法感知延迟 | 可视化界面显示每个节点的延迟时间 |
-| 缺乏可视化界面 | 提供 React 组件，用户可手动选择和切换节点 |
-
 ### 与现有方案对比
 
-| 特性 | HX-CDN-Forge | 传统降级方案 | 服务端负载均衡 |
-|------|-------------|------------|--------------|
-| 运行时延迟测速 | ✅ | ❌ | ✅ |
+| 特性 | HX-CDN-Forge | 传统降级方案 | Cloudflare Workers |
+|------|-------------|------------|------------------|
+| 多源支持 | ✅ GitHub/NPM/CF/自定义 | ❌ | ❌ |
+| 运行时延迟测速 | ✅ | ❌ | ❌ |
 | 前端组件 | ✅ React UI | ❌ | ❌ |
-| 自动选择最快节点 | ✅ | ❌ 仅故障转移 | ✅ |
+| 自动选择最快节点 | ✅ | ❌ 仅故障转移 | ❌ |
 | 用户手动切换 | ✅ | ❌ | ❌ |
 | TypeScript 支持 | ✅ | ❌ | 部分 |
-| GitHub 资源专注 | ✅ | ❌ | ❌ |
-| 中国友好 | ✅ 内置国内镜像 | ❌ | ❌ |
+| 中国友好 | ✅ 内置国内镜像 | ❌ | ✅ |
 
 ---
 
-## 技术架构
+## 常见问题
 
-```
-HX-CDN-Forge
-├── types/cdn.ts              # TypeScript 类型定义
-├── utils/
-│   ├── cdnTester.ts          # CDN 延迟测试工具
-│   └── cdnManager.ts         # CDN 管理器（节点选择、存储）
-├── contexts/CDNContext.tsx   # React Context
-├── components/
-│   └── CDNNodeSelector/      # UI 组件
-│       ├── index.tsx
-│       └── styles.css
-├── hooks/useCDNConfig.ts     # 配置助手 Hook
-└── index.ts                  # 导出文件
+### Q: 如何部署 Cloudflare Workers 代理 GitHub？
+
+**A:** 按照以下步骤：
+
+1. 访问 https://workers.cloudflare.com/
+2. 创建 Worker
+3. 复制 [gh-proxy](https://github.com/hadis898/gh-proxy) 的 `index.js` 代码
+4. 粘贴到 Worker 编辑器并部署
+5. 获得域名后，使用 `createCloudflareCDNConfig()` 配置
+
+**优势**：完全免费（每天 10 万次请求），在中国访问速度快。
+
+### Q: 如何在中国大陆获得最佳访问速度？
+
+**A:** 推荐方案：
+
+1. **首选**：部署 Cloudflare Workers 代理（免费、速度快）
+2. **备选**：使用 JSD Mirror 或 Zstatic 镜像
+3. **自有资源**：使用阿里云 OSS 或腾讯云 COS
+
+### Q: 是否支持私有 GitHub 仓库？
+
+**A:** 支持！通过 Cloudflare Workers 代理时，可以在 URL 中嵌入 Token：
+
+```bash
+git clone https://user:TOKEN@your-worker.workers.dev/https://github.com/user/private-repo
 ```
 
 ---
@@ -330,7 +493,7 @@ HX-CDN-Forge
 
 ```bash
 # 克隆仓库
-git clone https://github.com/HX-UserName/hx-cdn-forge.git
+git clone https://github.com/HengXin666/HX-CDN-Forge.git
 
 # 安装依赖
 npm install
@@ -340,9 +503,6 @@ npm run dev
 
 # 构建
 npm run build
-
-# 类型检查
-npm run type-check
 ```
 
 ---
@@ -361,11 +521,12 @@ MIT © HX
 
 ## 致谢
 
-本项目受到以下 CDN 服务的启发和支持：
+本项目受到以下项目的启发：
 
+- [gh-proxy](https://github.com/hadis898/gh-proxy) - GitHub 文件加速代理
 - [jsDelivr](https://www.jsdelivr.com/) - 开源 CDN 服务
 - [JSD Mirror](https://cdn.jsdmirror.com/) - jsDelivr 中国镜像
-- [Zstatic](https://zstatic.net/) - 静态资源 CDN
+- [Cloudflare Workers](https://workers.cloudflare.com/) - 无服务器平台
 
 ---
 

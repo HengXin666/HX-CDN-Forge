@@ -1,264 +1,426 @@
-import type { CDNConfig, CDNNode, CDNLatencyResult } from '../types/cdn';
-import { CDNTester, defaultCDNTester } from './cdnTester';
+import {
+  CDNConfig,
+  CDNNode,
+  CDNContext,
+  CDNSourceType,
+} from '../types/cdn';
+
+/**
+ * 预定义的 CDN 节点模板
+ */
+export const CDN_NODE_TEMPLATES = {
+  /**
+   * GitHub 相关 CDN 节点
+   */
+  github: {
+    jsdelivr_main: {
+      id: 'jsdelivr-main',
+      name: 'jsDelivr (Main)',
+      baseUrl: 'https://cdn.jsdelivr.net/gh',
+      region: 'global' as const,
+      sourceType: 'github' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.githubUser || !context?.githubRepo || !context?.githubRef) {
+          throw new Error('GitHub context (user, repo, ref) is required');
+        }
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.githubUser}/${context.githubRepo}@${context.githubRef}${cleanPath}`;
+      },
+    },
+
+    jsdelivr_fastly: {
+      id: 'jsdelivr-fastly',
+      name: 'jsDelivr (Fastly)',
+      baseUrl: 'https://fastly.jsdelivr.net/gh',
+      region: 'global' as const,
+      sourceType: 'github' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.githubUser || !context?.githubRepo || !context?.githubRef) {
+          throw new Error('GitHub context (user, repo, ref) is required');
+        }
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.githubUser}/${context.githubRepo}@${context.githubRef}${cleanPath}`;
+      },
+    },
+
+    jsdelivr_testing: {
+      id: 'jsdelivr-testing',
+      name: 'jsDelivr (Testing)',
+      baseUrl: 'https://testing.jsdelivr.net/gh',
+      region: 'global' as const,
+      sourceType: 'github' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.githubUser || !context?.githubRepo || !context?.githubRef) {
+          throw new Error('GitHub context (user, repo, ref) is required');
+        }
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.githubUser}/${context.githubRepo}@${context.githubRef}${cleanPath}`;
+      },
+    },
+
+    jsd_mirror: {
+      id: 'jsd-mirror',
+      name: 'JSD Mirror (中国大陆)',
+      baseUrl: 'https://cdn.jsdmirror.com/gh',
+      region: 'china' as const,
+      sourceType: 'github' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.githubUser || !context?.githubRepo || !context?.githubRef) {
+          throw new Error('GitHub context (user, repo, ref) is required');
+        }
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.githubUser}/${context.githubRepo}@${context.githubRef}${cleanPath}`;
+      },
+    },
+
+    zstatic: {
+      id: 'zstatic',
+      name: 'Zstatic (中国大陆)',
+      baseUrl: 'https://jsd.zstatic.net/gh',
+      region: 'china' as const,
+      sourceType: 'github' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.githubUser || !context?.githubRepo || !context?.githubRef) {
+          throw new Error('GitHub context (user, repo, ref) is required');
+        }
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.githubUser}/${context.githubRepo}@${context.githubRef}${cleanPath}`;
+      },
+    },
+
+    github_raw: {
+      id: 'github-raw',
+      name: 'GitHub Raw',
+      baseUrl: 'https://raw.githubusercontent.com',
+      region: 'global' as const,
+      sourceType: 'github' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.githubUser || !context?.githubRepo || !context?.githubRef) {
+          throw new Error('GitHub context (user, repo, ref) is required');
+        }
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.githubUser}/${context.githubRepo}/${context.githubRef}${cleanPath}`;
+      },
+    },
+  },
+
+  /**
+   * Cloudflare Workers 代理 GitHub 资源节点
+   * 需要用户自行部署 gh-proxy 或类似服务
+   */
+  cloudflare: {
+    /**
+     * 创建 Cloudflare Worker 节点配置
+     * @param workerDomain - Worker 域名，例如：'your-worker.workers.dev' 或自定义域名
+     */
+    createWorkerNode: (workerDomain: string): CDNNode => ({
+      id: `cf-worker-${workerDomain.replace(/\./g, '-')}`,
+      name: `Cloudflare Worker (${workerDomain})`,
+      baseUrl: `https://${workerDomain}`,
+      region: 'global',
+      sourceType: 'cloudflare',
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        // Cloudflare Worker 代理 GitHub 资源
+        if (context?.githubUser && context?.githubRepo && context?.githubRef) {
+          const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+          const githubUrl = `https://github.com/${context.githubUser}/${context.githubRepo}/blob/${context.githubRef}${cleanPath}`;
+          return `${baseUrl}/${githubUrl}`;
+        }
+        // 如果有完整 URL，直接代理
+        if (resourcePath.startsWith('http')) {
+          return `${baseUrl}/${resourcePath}`;
+        }
+        return `${baseUrl}${resourcePath}`;
+      },
+    }),
+
+    /**
+     * 公共 gh-proxy 服务（示例，建议自行部署）
+     */
+    public_proxy: {
+      id: 'gh-proxy-public',
+      name: 'GitHub Proxy (公共)',
+      baseUrl: 'https://gh.api.99988866.xyz',
+      region: 'global' as const,
+      sourceType: 'cloudflare' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (context?.githubUser && context?.githubRepo && context?.githubRef) {
+          const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+          const githubUrl = `https://github.com/${context.githubUser}/${context.githubRepo}/blob/${context.githubRef}${cleanPath}`;
+          return `${baseUrl}/${githubUrl}`;
+        }
+        if (resourcePath.startsWith('http')) {
+          return `${baseUrl}/${resourcePath}`;
+        }
+        return `${baseUrl}${resourcePath}`;
+      },
+    },
+  },
+
+  /**
+   * NPM 包 CDN 节点
+   */
+  npm: {
+    jsdelivr_npm: {
+      id: 'jsdelivr-npm',
+      name: 'jsDelivr (NPM)',
+      baseUrl: 'https://cdn.jsdelivr.net/npm',
+      region: 'global' as const,
+      sourceType: 'npm' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.npmPackage) {
+          throw new Error('NPM package name is required');
+        }
+        const version = context.npmVersion || 'latest';
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.npmPackage}@${version}${cleanPath}`;
+      },
+    },
+
+    unpkg: {
+      id: 'unpkg',
+      name: 'unpkg',
+      baseUrl: 'https://unpkg.com',
+      region: 'global' as const,
+      sourceType: 'npm' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.npmPackage) {
+          throw new Error('NPM package name is required');
+        }
+        const version = context.npmVersion || 'latest';
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.npmPackage}@${version}${cleanPath}`;
+      },
+    },
+
+    esm_sh: {
+      id: 'esm-sh',
+      name: 'esm.sh',
+      baseUrl: 'https://esm.sh',
+      region: 'global' as const,
+      sourceType: 'npm' as CDNSourceType,
+      buildUrl: (baseUrl: string, resourcePath: string, context?: CDNContext) => {
+        if (!context?.npmPackage) {
+          throw new Error('NPM package name is required');
+        }
+        const version = context.npmVersion ? `@${context.npmVersion}` : '';
+        const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+        return `${baseUrl}/${context.npmPackage}${version}${cleanPath}`;
+      },
+    },
+  },
+};
 
 /**
  * CDN 管理器
- * 负责节点选择、存储、URL 构建等功能
  */
 export class CDNManager {
   private config: CDNConfig;
-  private tester: CDNTester;
-  private currentNodeId: string | null = null;
-  private latencyResults: Map<string, CDNLatencyResult> = new Map();
+  private currentNode: CDNNode | null = null;
   private storageKey: string;
 
   constructor(config: CDNConfig) {
     this.config = config;
-    this.tester = new CDNTester({
-      timeout: config.timeout,
-      retryCount: config.retryCount,
-    });
-    this.storageKey = config.storageKey ?? 'cdn-selected-node';
-    
-    // 从本地存储恢复选中的节点
+    this.storageKey = config.storageKey || 'hx-cdn-forge-selected-node';
     this.loadSelectedNode();
   }
 
   /**
-   * 初始化：自动测速并选择最佳节点
+   * 从 localStorage 加载上次选择的节点
    */
-  async initialize(): Promise<void> {
-    // 如果已有选中的节点，先使用
-    if (this.currentNodeId) {
-      return;
-    }
+  private loadSelectedNode(): void {
+    if (typeof window === 'undefined') return;
 
-    // 如果启用自动选择，则测速并选择最佳节点
-    if (this.config.autoSelectBest !== false) {
-      await this.testAndSelectBest();
-    } else {
-      // 否则选择默认节点
-      const defaultNode = this.config.nodes.find(n => n.isDefault);
-      if (defaultNode) {
-        this.selectNode(defaultNode.id);
-      } else if (this.config.nodes.length > 0) {
-        this.selectNode(this.config.nodes[0].id);
+    try {
+      const savedNodeId = localStorage.getItem(this.storageKey);
+      if (savedNodeId) {
+        const node = this.config.nodes.find(n => n.id === savedNodeId);
+        if (node) {
+          this.currentNode = node;
+        }
       }
+    } catch (error) {
+      console.error('Failed to load selected node from localStorage:', error);
     }
   }
 
   /**
-   * 测速并选择最佳节点
+   * 保存选择的节点到 localStorage
    */
-  async testAndSelectBest(): Promise<CDNLatencyResult[]> {
-    const results = await this.tester.testAllNodes(this.config.nodes);
-    
-    // 存储测速结果
-    results.forEach(result => {
-      this.latencyResults.set(result.nodeId, result);
-    });
-    
-    // 选择最佳节点
-    const bestNodeId = this.tester.getBestNode(results);
-    if (bestNodeId) {
-      this.selectNode(bestNodeId);
+  private saveSelectedNode(nodeId: string): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+      localStorage.setItem(this.storageKey, nodeId);
+    } catch (error) {
+      console.error('Failed to save selected node to localStorage:', error);
     }
-    
-    return results;
   }
 
   /**
-   * 测试所有节点延迟
+   * 获取当前节点
    */
-  async testAllNodes(): Promise<CDNLatencyResult[]> {
-    const results = await this.tester.testAllNodes(this.config.nodes);
-    
-    results.forEach(result => {
-      this.latencyResults.set(result.nodeId, result);
-    });
-    
-    return results;
+  getCurrentNode(): CDNNode | null {
+    return this.currentNode;
   }
 
   /**
    * 选择节点
    */
-  selectNode(nodeId: string): void {
+  selectNode(nodeId: string): CDNNode | null {
     const node = this.config.nodes.find(n => n.id === nodeId);
-    if (!node) {
-      console.warn(`CDN node not found: ${nodeId}`);
-      return;
+    if (node) {
+      this.currentNode = node;
+      this.saveSelectedNode(nodeId);
+      return node;
     }
-    
-    this.currentNodeId = nodeId;
-    this.saveSelectedNode(nodeId);
+    return null;
   }
 
   /**
-   * 获取当前选中的节点
+   * 获取所有节点
    */
-  getCurrentNode(): CDNNode | null {
-    if (!this.currentNodeId) return null;
-    return this.config.nodes.find(n => n.id === this.currentNodeId) || null;
+  getAllNodes(): CDNNode[] {
+    return this.config.nodes;
   }
 
   /**
-   * 获取当前节点 ID
+   * 构建 CDN URL
    */
-  getCurrentNodeId(): string | null {
-    return this.currentNodeId;
-  }
-
-  /**
-   * 获取所有节点（带延迟信息）
-   */
-  getNodesWithLatency(): Array<CDNNode & { latency?: number; latencyStatus?: 'success' | 'failed' | 'testing' }> {
-    return this.config.nodes.map(node => {
-      const result = this.latencyResults.get(node.id);
-      return {
-        ...node,
-        latency: result?.latency,
-        latencyStatus: result ? (result.success ? 'success' : 'failed') : undefined,
-      };
-    });
-  }
-
-  /**
-   * 获取排序后的节点列表（按延迟排序）
-   */
-  getSortedNodes(): Array<CDNNode & { latency?: number; latencyStatus?: 'success' | 'failed' | 'testing' }> {
-    const nodes = this.getNodesWithLatency();
-    
-    return nodes.sort((a, b) => {
-      // 成功的节点优先
-      if (a.latencyStatus === 'success' && b.latencyStatus !== 'success') return -1;
-      if (a.latencyStatus !== 'success' && b.latencyStatus === 'success') return 1;
-      
-      // 都成功或都失败，按延迟排序
-      const latencyA = a.latency ?? Infinity;
-      const latencyB = b.latency ?? Infinity;
-      return latencyA - latencyB;
-    });
-  }
-
-  /**
-   * 构建 GitHub CDN URL
-   * @param relativePath 相对于仓库根目录的路径
-   * @param customRef 自定义引用（分支、tag 或 commit），不指定则使用配置中的引用
-   */
-  buildUrl(relativePath: string, customRef?: string): string {
-    const node = this.getCurrentNode();
-    if (!node) {
-      console.warn('No CDN node selected');
-      return '';
+  buildUrl(resourcePath: string): string {
+    if (!this.currentNode) {
+      throw new Error('No CDN node selected');
     }
 
-    const cleanPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
-    const ref = customRef || this.config.githubRef;
-    
-    // 根据 baseUrl 的格式构建完整 URL
-    // 支持两种格式：
-    // 1. https://cdn.jsdelivr.net/gh/user/repo@ref
-    // 2. https://cdn.example.com (需要自行拼接路径)
-    
-    if (node.baseUrl.includes('/gh/')) {
-      // jsDelivr 格式：已包含 /gh/user/repo
-      const baseUrl = node.baseUrl.endsWith('/') ? node.baseUrl.slice(0, -1) : node.baseUrl;
-      return `${baseUrl}${cleanPath}`;
-    } else {
-      // 其他 CDN 格式：需要拼接完整路径
-      const baseUrl = node.baseUrl.endsWith('/') ? node.baseUrl.slice(0, -1) : node.baseUrl;
-      return `${baseUrl}/gh/${this.config.githubUser}/${this.config.githubRepo}@${ref}${cleanPath}`;
-    }
-  }
-
-  /**
-   * 构建指定节点的 URL
-   */
-  buildUrlForNode(nodeId: string, relativePath: string, customRef?: string): string {
-    const node = this.config.nodes.find(n => n.id === nodeId);
-    if (!node) {
-      console.warn(`CDN node not found: ${nodeId}`);
-      return '';
-    }
-
-    const cleanPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
-    const ref = customRef || this.config.githubRef;
-    
-    if (node.baseUrl.includes('/gh/')) {
-      const baseUrl = node.baseUrl.endsWith('/') ? node.baseUrl.slice(0, -1) : node.baseUrl;
-      return `${baseUrl}${cleanPath}`;
-    } else {
-      const baseUrl = node.baseUrl.endsWith('/') ? node.baseUrl.slice(0, -1) : node.baseUrl;
-      return `${baseUrl}/gh/${this.config.githubUser}/${this.config.githubRepo}@${ref}${cleanPath}`;
-    }
-  }
-
-  /**
-   * 从本地存储加载选中的节点
-   */
-  private loadSelectedNode(): void {
-    if (typeof window === 'undefined') return;
-    
     try {
-      const savedNodeId = localStorage.getItem(this.storageKey);
-      if (savedNodeId) {
-        // 验证节点是否存在
-        const node = this.config.nodes.find(n => n.id === savedNodeId);
-        if (node && node.enabled !== false) {
-          this.currentNodeId = savedNodeId;
-        }
-      }
+      return this.currentNode.buildUrl(
+        this.currentNode.baseUrl,
+        resourcePath,
+        this.config.context
+      );
     } catch (error) {
-      console.warn('Failed to load selected CDN node:', error);
+      console.error(`Failed to build URL for node ${this.currentNode.id}:`, error);
+      throw error;
     }
   }
 
   /**
-   * 保存选中的节点到本地存储
+   * 获取测速 URL
    */
-  private saveSelectedNode(nodeId: string): void {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      localStorage.setItem(this.storageKey, nodeId);
-    } catch (error) {
-      console.warn('Failed to save selected CDN node:', error);
-    }
+  getTestUrl(node: CDNNode): string {
+    const testPath = node.testPath || '/';
+    return node.buildUrl(node.baseUrl, testPath, this.config.context);
   }
 
   /**
-   * 清除选中的节点
+   * 获取配置
    */
-  clearSelectedNode(): void {
-    this.currentNodeId = null;
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem(this.storageKey);
-      } catch (error) {
-        console.warn('Failed to clear selected CDN node:', error);
-      }
-    }
-  }
-
-  /**
-   * 获取测速结果
-   */
-  getLatencyResults(): Map<string, CDNLatencyResult> {
-    return new Map(this.latencyResults);
+  getConfig(): CDNConfig {
+    return this.config;
   }
 
   /**
    * 更新配置
    */
-  updateConfig(config: Partial<CDNConfig>): void {
-    this.config = { ...this.config, ...config };
+  updateConfig(newConfig: Partial<CDNConfig>): void {
+    this.config = { ...this.config, ...newConfig };
+    if (newConfig.nodes && this.currentNode) {
+      // 如果节点列表更新，检查当前节点是否还在列表中
+      const exists = newConfig.nodes.find(n => n.id === this.currentNode!.id);
+      if (!exists) {
+        this.currentNode = null;
+      }
+    }
   }
 }
 
 /**
- * 创建 CDN 管理器实例
+ * 创建 GitHub CDN 配置（便捷方法）
  */
-export function createCDNManager(config: CDNConfig): CDNManager {
-  return new CDNManager(config);
+export function createGitHubCDNConfig(options: {
+  githubUser: string;
+  githubRepo: string;
+  githubRef: string;
+  cdnNodes?: CDNNode[];
+  defaultNodeId?: string;
+}): CDNConfig {
+  const defaultNodes = [
+    CDN_NODE_TEMPLATES.github.jsdelivr_main,
+    CDN_NODE_TEMPLATES.github.jsdelivr_fastly,
+    CDN_NODE_TEMPLATES.github.jsdelivr_testing,
+    CDN_NODE_TEMPLATES.github.jsd_mirror,
+    CDN_NODE_TEMPLATES.github.zstatic,
+    CDN_NODE_TEMPLATES.github.github_raw,
+  ];
+
+  return {
+    context: {
+      githubUser: options.githubUser,
+      githubRepo: options.githubRepo,
+      githubRef: options.githubRef,
+    },
+    nodes: options.cdnNodes || defaultNodes,
+    defaultNodeId: options.defaultNodeId,
+  };
+}
+
+/**
+ * 创建 Cloudflare Worker CDN 配置（便捷方法）
+ */
+export function createCloudflareCDNConfig(options: {
+  workerDomain: string;
+  githubUser?: string;
+  githubRepo?: string;
+  githubRef?: string;
+  additionalNodes?: CDNNode[];
+}): CDNConfig {
+  const cfNode = CDN_NODE_TEMPLATES.cloudflare.createWorkerNode(options.workerDomain);
+
+  const nodes = [cfNode, ...(options.additionalNodes || [])];
+
+  return {
+    context: {
+      cfWorkerDomain: options.workerDomain,
+      githubUser: options.githubUser,
+      githubRepo: options.githubRepo,
+      githubRef: options.githubRef,
+    },
+    nodes,
+  };
+}
+
+/**
+ * 创建 NPM CDN 配置（便捷方法）
+ */
+export function createNPMCDNConfig(options: {
+  npmPackage: string;
+  npmVersion?: string;
+  cdnNodes?: CDNNode[];
+}): CDNConfig {
+  const defaultNodes = [
+    CDN_NODE_TEMPLATES.npm.jsdelivr_npm,
+    CDN_NODE_TEMPLATES.npm.unpkg,
+    CDN_NODE_TEMPLATES.npm.esm_sh,
+  ];
+
+  return {
+    context: {
+      npmPackage: options.npmPackage,
+      npmVersion: options.npmVersion,
+    },
+    nodes: options.cdnNodes || defaultNodes,
+  };
+}
+
+/**
+ * 创建混合 CDN 配置（支持多种源）
+ */
+export function createMixedCDNConfig(options: {
+  nodes: CDNNode[];
+  context?: CDNContext;
+}): CDNConfig {
+  return {
+    context: options.context || {},
+    nodes: options.nodes,
+  };
 }
