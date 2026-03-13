@@ -1,0 +1,62 @@
+{
+  "name": "hx-cdn-forge",
+  "version": "1.0.0",
+  "description": "A React + TypeScript CDN node selector with latency testing and smart switching for GitHub resources",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "keywords": [
+    "cdn",
+    "cdn-selector",
+    "cdn-forge",
+    "latency-test",
+    "github-cdn",
+    "jsdelivr",
+    "react",
+    "typescript",
+    "cdn-switcher",
+    "cdn-failover",
+    "performance",
+    "china-friendly"
+  ],
+  "author": "HX",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HX-UserName/hx-cdn-forge"
+  },
+  "bugs": {
+    "url": "https://github.com/HX-UserName/hx-cdn-forge/issues"
+  },
+  "homepage": "https://github.com/HX-UserName/hx-cdn-forge#readme",
+  "scripts": {
+    "build": "parcel build src/index.ts --no-source-maps",
+    "dev": "parcel example/index.html --port 3001",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/**/*.{ts,tsx}",
+    "test": "jest",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "parcel": "^2.11.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "react-dom": ">=16.8.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
+}

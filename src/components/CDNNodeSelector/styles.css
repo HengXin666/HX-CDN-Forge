@@ -1,0 +1,206 @@
+/* CDN 节点选择器样式 */
+
+.cdn-node-selector {
+  position: relative;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  font-size: 14px;
+  min-width: 280px;
+}
+
+.cdn-selector-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+
+.cdn-selector-container {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+/* 当前节点按钮 */
+.cdn-current-node {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.cdn-current-node:hover:not(:disabled) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.cdn-current-node:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cdn-node-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.cdn-node-name {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.cdn-node-region {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* 延迟显示 */
+.cdn-latency {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.latency-excellent {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.latency-good {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.latency-normal {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.latency-slow {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.latency-failed {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.latency-testing {
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+/* 下拉箭头 */
+.cdn-selector-arrow {
+  margin-left: 8px;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+/* 刷新按钮 */
+.cdn-refresh-button {
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 16px;
+}
+
+.cdn-refresh-button:hover:not(:disabled) {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.cdn-refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 节点列表 */
+.cdn-node-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 52px;
+  margin-top: 4px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.cdn-node-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: left;
+}
+
+.cdn-node-option:last-child {
+  border-bottom: none;
+}
+
+.cdn-node-option:hover:not(:disabled) {
+  background: #f9fafb;
+}
+
+.cdn-node-option.selected {
+  background: #eff6ff;
+}
+
+.cdn-node-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cdn-no-nodes {
+  padding: 20px;
+  text-align: center;
+  color: #9ca3af;
+}
+
+/* 滚动条样式 */
+.cdn-node-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cdn-node-list::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+
+.cdn-node-list::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.cdn-node-list::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
