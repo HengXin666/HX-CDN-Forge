@@ -1,48 +1,41 @@
-import type { CDNNode, CDNLatencyResult, CDNConfig } from '../types/cdn';
+import type { CDNNode, CDNLatencyResult } from '../types/cdn';
 
 /**
  * CDN 节点测速工具类
  */
 export class CDNTester {
-  private config: Required<Pick<CDNConfig, 'timeout' | 'retryCount'>>;
+  private timeout: number;
+  private retryCount: number;
 
-  constructor(config?: Partial<Pick<CDNConfig, 'timeout' | 'retryCount'>>) {
-    this.config = {
-      timeout: config?.timeout ?? 5000,
-      retryCount: config?.retryCount ?? 2,
-    };
+  constructor(options?: { timeout?: number; retryCount?: number }) {
+    this.timeout = options?.timeout ?? 5000;
+    this.retryCount = options?.retryCount ?? 2;
   }
 
   /**
    * 测试单个 CDN 节点的延迟
-   * @param node CDN 节点配置
-   * @param testPath 测速路径，默认为根路径
-   * @returns 延迟结果
    */
-  async testNodeLatency(node: CDNNode, testPath: string = '/'): Promise<CDNLatencyResult> {
-    const testUrl = this.buildTestUrl(node.baseUrl, testPath);
-    
-    for (let attempt = 0; attempt < this.config.retryCount; attempt++) {
+  async testNodeLatency(node: CDNNode, testUrl?: string): Promise<CDNLatencyResult> {
+    const url = testUrl || this.buildTestUrl(node.baseUrl, node.testPath || '/');
+
+    for (let attempt = 0; attempt <= this.retryCount; attempt++) {
       try {
         const startTime = performance.now();
-        
+
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
-        
-        const response = await fetch(testUrl, {
+        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+        await fetch(url, {
           method: 'HEAD',
-          mode: 'no-cors', // 允许跨域请求
+          mode: 'no-cors',
           cache: 'no-cache',
           signal: controller.signal,
         });
-        
+
         clearTimeout(timeoutId);
-        
-        const endTime = performance.now();
-        const latency = endTime - startTime;
-        
-        // no-cors 模式下，response.ok 总是 false，response.status 为 0
-        // 只要没有抛出异常，就认为请求成功
+
+        const latency = performance.now() - startTime;
+
         return {
           nodeId: node.id,
           latency: Math.round(latency * 100) / 100,
@@ -50,8 +43,7 @@ export class CDNTester {
           success: true,
         };
       } catch (error) {
-        // 最后一次尝试失败
-        if (attempt === this.config.retryCount - 1) {
+        if (attempt === this.retryCount) {
           return {
             nodeId: node.id,
             latency: -1,
@@ -60,12 +52,11 @@ export class CDNTester {
             error: error instanceof Error ? error.message : 'Unknown error',
           };
         }
-        
-        // 等待一段时间后重试
+        // 递增等待
         await this.delay(200 * (attempt + 1));
       }
     }
-    
+
     return {
       nodeId: node.id,
       latency: -1,
@@ -76,54 +67,68 @@ export class CDNTester {
   }
 
   /**
-   * 批量测试多个 CDN 节点的延迟
-   * @param nodes CDN 节点列表
-   * @param testPath 测速路径
-   * @returns 延迟结果列表
+   * 并发测试多个 CDN 节点
    */
-  async testAllNodes(nodes: CDNNode[], testPath: string = '/'): Promise<CDNLatencyResult[]> {
-    const enabledNodes = nodes.filter(node => node.enabled !== false);
-    
-    const results = await Promise.all(
-      enabledNodes.map(node => this.testNodeLatency(node, testPath))
-    );
-    
+  async testAllNodes(nodes: CDNNode[]): Promise<CDNLatencyResult[]> {
+    const enabledNodes = nodes.filter((n) => n.enabled !== false);
+    return Promise.all(enabledNodes.map((node) => this.testNodeLatency(node)));
+  }
+
+  /**
+   * 流式测试所有节点：并发执行，每完成一个就立即回调
+   */
+  async testAllNodesStreaming(
+    nodes: CDNNode[],
+    onResult: (result: CDNLatencyResult) => void,
+  ): Promise<CDNLatencyResult[]> {
+    const enabledNodes = nodes.filter((n) => n.enabled !== false);
+    const results: CDNLatencyResult[] = [];
+
+    const promises = enabledNodes.map(async (node) => {
+      const result = await this.testNodeLatency(node);
+      results.push(result);
+      onResult(result);
+      return result;
+    });
+
+    await Promise.all(promises);
     return results;
   }
 
   /**
-   * 获取最佳节点（延迟最低且成功）
-   * @param results 测速结果列表
-   * @returns 最佳节点 ID，如果没有可用节点则返回 null
+   * 从结果中找到延迟最低的节点 ID
    */
-  getBestNode(results: CDNLatencyResult[]): string | null {
-    const successResults = results
-      .filter(r => r.success && r.latency >= 0)
+  getBestNodeId(results: CDNLatencyResult[]): string | null {
+    const sorted = results
+      .filter((r) => r.success && r.latency >= 0)
       .sort((a, b) => a.latency - b.latency);
-    
-    return successResults.length > 0 ? successResults[0].nodeId : null;
+    return sorted.length > 0 ? sorted[0]!.nodeId : null;
   }
 
   /**
-   * 构建测速 URL
+   * 更新超时设置
    */
+  setTimeout(ms: number): void {
+    this.timeout = ms;
+  }
+
+  /**
+   * 更新重试次数
+   */
+  setRetryCount(count: number): void {
+    this.retryCount = count;
+  }
+
   private buildTestUrl(baseUrl: string, testPath: string): string {
-    // 确保路径以 / 开头
     const normalizedPath = testPath.startsWith('/') ? testPath : `/${testPath}`;
-    // 移除 baseUrl 末尾的 /
-    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    return `${normalizedBaseUrl}${normalizedPath}`;
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    return `${normalizedBase}${normalizedPath}`;
   }
 
-  /**
-   * 延迟函数
-   */
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
-/**
- * 默认 CDN 测速器实例
- */
+/** 默认测速器实例 */
 export const defaultCDNTester = new CDNTester();

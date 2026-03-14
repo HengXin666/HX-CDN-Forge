@@ -1,206 +1,561 @@
-/* CDN 节点选择器样式 */
+/* ============================================================
+   HX-CDN-Forge — CDN Node Selector
+   Modern grid layout / CSS Custom Properties
+   ============================================================ */
 
+/* ---- CSS Variables (Light Theme) ---- */
 .cdn-node-selector {
+  --cdn-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+  --cdn-font-size: 14px;
+  --cdn-font-size-sm: 12px;
+  --cdn-font-size-xs: 11px;
+
+  --cdn-radius: 12px;
+  --cdn-radius-sm: 8px;
+  --cdn-radius-pill: 999px;
+
+  --cdn-spacing-xs: 4px;
+  --cdn-spacing-sm: 8px;
+  --cdn-spacing-md: 12px;
+  --cdn-spacing-lg: 16px;
+
+  --cdn-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Colors */
+  --cdn-bg: #ffffff;
+  --cdn-bg-hover: #f8fafc;
+  --cdn-bg-active: #eff6ff;
+  --cdn-bg-dropdown: #ffffff;
+  --cdn-bg-badge: #f1f5f9;
+  --cdn-bg-card: #ffffff;
+  --cdn-bg-card-hover: #f1f5f9;
+
+  --cdn-border: #e2e8f0;
+  --cdn-border-hover: #93c5fd;
+  --cdn-border-focus: #3b82f6;
+  --cdn-border-card: #e2e8f0;
+
+  --cdn-text: #1e293b;
+  --cdn-text-secondary: #64748b;
+  --cdn-text-muted: #94a3b8;
+
+  --cdn-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --cdn-shadow-lg: 0 12px 48px -6px rgba(0, 0, 0, 0.12), 0 6px 16px -4px rgba(0, 0, 0, 0.06);
+  --cdn-shadow-focus: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  --cdn-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --cdn-shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  /* Latency colors */
+  --cdn-excellent-bg: #dcfce7;
+  --cdn-excellent-text: #166534;
+  --cdn-good-bg: #dbeafe;
+  --cdn-good-text: #1e40af;
+  --cdn-normal-bg: #fef9c3;
+  --cdn-normal-text: #854d0e;
+  --cdn-slow-bg: #fee2e2;
+  --cdn-slow-text: #991b1b;
+  --cdn-failed-bg: #fef2f2;
+  --cdn-failed-text: #dc2626;
+  --cdn-testing-bg: #f1f5f9;
+  --cdn-testing-text: #64748b;
+  --cdn-idle-bg: #f8fafc;
+  --cdn-idle-text: #94a3b8;
+
+  /* Accent */
+  --cdn-accent: #3b82f6;
+  --cdn-accent-light: #eff6ff;
+
+  /* Base */
   position: relative;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  font-size: 14px;
-  min-width: 280px;
+  font-family: var(--cdn-font-family);
+  font-size: var(--cdn-font-size);
+  min-width: 260px;
+  color: var(--cdn-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* ---- Dark Mode ---- */
+.cdn-node-selector[data-theme="dark"],
+.cdn-node-selector.cdn-dark {
+  --cdn-bg: #1e293b;
+  --cdn-bg-hover: #334155;
+  --cdn-bg-active: #1e3a5f;
+  --cdn-bg-dropdown: #1e293b;
+  --cdn-bg-badge: #334155;
+  --cdn-bg-card: #283548;
+  --cdn-bg-card-hover: #334155;
+
+  --cdn-border: #475569;
+  --cdn-border-hover: #60a5fa;
+  --cdn-border-focus: #3b82f6;
+  --cdn-border-card: #3b4d64;
+
+  --cdn-text: #f1f5f9;
+  --cdn-text-secondary: #94a3b8;
+  --cdn-text-muted: #64748b;
+
+  --cdn-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --cdn-shadow-lg: 0 12px 48px -6px rgba(0, 0, 0, 0.5), 0 6px 16px -4px rgba(0, 0, 0, 0.3);
+  --cdn-shadow-focus: 0 0 0 3px rgba(59, 130, 246, 0.3);
+  --cdn-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --cdn-shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.3);
+
+  --cdn-excellent-bg: #052e16;
+  --cdn-excellent-text: #86efac;
+  --cdn-good-bg: #172554;
+  --cdn-good-text: #93c5fd;
+  --cdn-normal-bg: #422006;
+  --cdn-normal-text: #fde047;
+  --cdn-slow-bg: #450a0a;
+  --cdn-slow-text: #fca5a5;
+  --cdn-failed-bg: #450a0a;
+  --cdn-failed-text: #f87171;
+  --cdn-testing-bg: #334155;
+  --cdn-testing-text: #94a3b8;
+  --cdn-idle-bg: #334155;
+  --cdn-idle-text: #64748b;
+
+  --cdn-accent: #60a5fa;
+  --cdn-accent-light: #1e3a5f;
+}
+
+/* ---- Auto Dark Mode ---- */
+@media (prefers-color-scheme: dark) {
+  .cdn-node-selector:not([data-theme="light"]):not(.cdn-light) {
+    --cdn-bg: #1e293b;
+    --cdn-bg-hover: #334155;
+    --cdn-bg-active: #1e3a5f;
+    --cdn-bg-dropdown: #1e293b;
+    --cdn-bg-badge: #334155;
+    --cdn-bg-card: #283548;
+    --cdn-bg-card-hover: #334155;
+
+    --cdn-border: #475569;
+    --cdn-border-hover: #60a5fa;
+    --cdn-border-focus: #3b82f6;
+    --cdn-border-card: #3b4d64;
+
+    --cdn-text: #f1f5f9;
+    --cdn-text-secondary: #94a3b8;
+    --cdn-text-muted: #64748b;
+
+    --cdn-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --cdn-shadow-lg: 0 12px 48px -6px rgba(0, 0, 0, 0.5), 0 6px 16px -4px rgba(0, 0, 0, 0.3);
+    --cdn-shadow-focus: 0 0 0 3px rgba(59, 130, 246, 0.3);
+    --cdn-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
+    --cdn-shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.3);
+
+    --cdn-excellent-bg: #052e16;
+    --cdn-excellent-text: #86efac;
+    --cdn-good-bg: #172554;
+    --cdn-good-text: #93c5fd;
+    --cdn-normal-bg: #422006;
+    --cdn-normal-text: #fde047;
+    --cdn-slow-bg: #450a0a;
+    --cdn-slow-text: #fca5a5;
+    --cdn-failed-bg: #450a0a;
+    --cdn-failed-text: #f87171;
+    --cdn-testing-bg: #334155;
+    --cdn-testing-text: #94a3b8;
+    --cdn-idle-bg: #334155;
+    --cdn-idle-text: #64748b;
+
+    --cdn-accent: #60a5fa;
+    --cdn-accent-light: #1e3a5f;
+  }
+}
+
+/* ---- Compact Mode ---- */
+.cdn-node-selector.cdn-compact {
+  --cdn-font-size: 13px;
+  --cdn-font-size-sm: 11px;
+  min-width: 220px;
+}
+
+.cdn-compact .cdn-current-node {
+  padding: var(--cdn-spacing-sm) var(--cdn-spacing-md);
+}
+
+.cdn-compact .cdn-node-option {
+  padding: var(--cdn-spacing-sm);
+}
+
+/* ---- Title ---- */
 .cdn-selector-title {
-  font-size: 13px;
+  font-size: var(--cdn-font-size-sm);
   font-weight: 600;
-  color: #374151;
-  margin-bottom: 8px;
+  color: var(--cdn-text-secondary);
+  margin-bottom: var(--cdn-spacing-sm);
   padding-left: 2px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
+/* ---- Container ---- */
 .cdn-selector-container {
   position: relative;
   display: flex;
-  gap: 8px;
+  gap: var(--cdn-spacing-sm);
   align-items: stretch;
 }
 
-/* 当前节点按钮 */
+/* ---- Trigger Button ---- */
 .cdn-current-node {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  background: #ffffff;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
+  gap: var(--cdn-spacing-sm);
+  padding: var(--cdn-spacing-md) var(--cdn-spacing-lg);
+  background: var(--cdn-bg);
+  border: 1.5px solid var(--cdn-border);
+  border-radius: var(--cdn-radius);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    border-color var(--cdn-transition),
+    box-shadow var(--cdn-transition),
+    background var(--cdn-transition);
   text-align: left;
+  box-shadow: var(--cdn-shadow);
+  outline: none;
 }
 
 .cdn-current-node:hover:not(:disabled) {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--cdn-border-hover);
+  box-shadow: var(--cdn-shadow-focus);
+}
+
+.cdn-current-node:focus-visible:not(:disabled) {
+  border-color: var(--cdn-border-focus);
+  box-shadow: var(--cdn-shadow-focus);
 }
 
 .cdn-current-node:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
+/* ---- Node Info ---- */
 .cdn-node-info {
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  min-width: 0;
 }
 
 .cdn-node-name {
-  font-weight: 500;
-  color: #1f2937;
+  font-weight: 600;
+  color: var(--cdn-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--cdn-font-size);
 }
 
 .cdn-node-region {
-  font-size: 12px;
-  color: #6b7280;
+  font-size: var(--cdn-font-size-xs);
+  color: var(--cdn-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-/* 延迟显示 */
+.cdn-node-region::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cdn-text-muted);
+  flex-shrink: 0;
+}
+
+/* Region dot colors */
+.cdn-region-china .cdn-node-region::before {
+  background: #ef4444;
+}
+.cdn-region-asia .cdn-node-region::before {
+  background: #f59e0b;
+}
+.cdn-region-global .cdn-node-region::before {
+  background: #3b82f6;
+}
+
+/* ---- Latency Badge ---- */
 .cdn-latency {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--cdn-font-size-xs);
+  font-weight: 600;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: var(--cdn-radius-pill);
   white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background var(--cdn-transition),
+    color var(--cdn-transition);
 }
 
-.latency-excellent {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.latency-good {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.latency-normal {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.latency-slow {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.latency-failed {
-  background: #fee2e2;
-  color: #dc2626;
-}
+.latency-excellent { background: var(--cdn-excellent-bg); color: var(--cdn-excellent-text); }
+.latency-good     { background: var(--cdn-good-bg);      color: var(--cdn-good-text); }
+.latency-normal   { background: var(--cdn-normal-bg);     color: var(--cdn-normal-text); }
+.latency-slow     { background: var(--cdn-slow-bg);       color: var(--cdn-slow-text); }
+.latency-failed   { background: var(--cdn-failed-bg);     color: var(--cdn-failed-text); }
+.latency-idle     { background: var(--cdn-idle-bg);       color: var(--cdn-idle-text); }
 
 .latency-testing {
-  background: #e5e7eb;
-  color: #6b7280;
+  background: var(--cdn-testing-bg);
+  color: var(--cdn-testing-text);
+  animation: cdn-pulse 1.2s ease-in-out infinite;
 }
 
-/* 下拉箭头 */
+@keyframes cdn-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ---- Arrow ---- */
 .cdn-selector-arrow {
-  margin-left: 8px;
-  color: #9ca3af;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--cdn-text-muted);
+  transition: transform var(--cdn-transition);
+  flex-shrink: 0;
 }
 
-/* 刷新按钮 */
+.cdn-selector-arrow svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cdn-selector-arrow.cdn-arrow-open {
+  transform: rotate(180deg);
+}
+
+/* ---- Refresh Button ---- */
 .cdn-refresh-button {
-  padding: 10px 12px;
-  background: #ffffff;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  background: var(--cdn-bg);
+  border: 1.5px solid var(--cdn-border);
+  border-radius: var(--cdn-radius);
   cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 16px;
+  transition:
+    border-color var(--cdn-transition),
+    background var(--cdn-transition),
+    box-shadow var(--cdn-transition),
+    color var(--cdn-transition);
+  color: var(--cdn-text-secondary);
+  box-shadow: var(--cdn-shadow);
+  outline: none;
+  padding: 0;
 }
 
 .cdn-refresh-button:hover:not(:disabled) {
-  border-color: #3b82f6;
-  background: #eff6ff;
+  border-color: var(--cdn-border-hover);
+  background: var(--cdn-accent-light);
+  color: var(--cdn-accent);
+  box-shadow: var(--cdn-shadow-focus);
+}
+
+.cdn-refresh-button:focus-visible:not(:disabled) {
+  border-color: var(--cdn-border-focus);
+  box-shadow: var(--cdn-shadow-focus);
 }
 
 .cdn-refresh-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* 节点列表 */
-.cdn-node-list {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 52px;
-  margin-top: 4px;
-  background: #ffffff;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  max-height: 320px;
-  overflow-y: auto;
-  z-index: 1000;
-}
-
-.cdn-node-option {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid #f3f4f6;
-  cursor: pointer;
-  transition: background 0.15s ease;
-  text-align: left;
-}
-
-.cdn-node-option:last-child {
-  border-bottom: none;
-}
-
-.cdn-node-option:hover:not(:disabled) {
-  background: #f9fafb;
-}
-
-.cdn-node-option.selected {
-  background: #eff6ff;
-}
-
-.cdn-node-option:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.cdn-no-nodes {
-  padding: 20px;
-  text-align: center;
-  color: #9ca3af;
+.cdn-refresh-button svg {
+  width: 16px;
+  height: 16px;
 }
 
-/* 滚动条样式 */
+.cdn-refresh-button.cdn-refreshing svg {
+  animation: cdn-spin 0.8s linear infinite;
+}
+
+@keyframes cdn-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Dropdown (2-column grid) ---- */
+.cdn-node-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--cdn-bg-dropdown);
+  border: 1.5px solid var(--cdn-border);
+  border-radius: var(--cdn-radius);
+  box-shadow: var(--cdn-shadow-lg);
+  max-height: 420px;
+  overflow-y: auto;
+  z-index: 1000;
+  padding: var(--cdn-spacing-sm);
+
+  /* 2-column grid */
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--cdn-spacing-sm);
+
+  /* animation */
+  animation: cdn-dropdown-enter 0.18s ease-out;
+  transform-origin: top;
+}
+
+@keyframes cdn-dropdown-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ---- Node Option (card style) ---- */
+.cdn-node-option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cdn-spacing-xs);
+  padding: var(--cdn-spacing-md);
+  background: var(--cdn-bg-card);
+  border: 1.5px solid var(--cdn-border-card);
+  border-radius: var(--cdn-radius-sm);
+  cursor: pointer;
+  transition:
+    background var(--cdn-transition),
+    border-color var(--cdn-transition),
+    box-shadow var(--cdn-transition),
+    transform 0.1s ease;
+  text-align: left;
+  outline: none;
+  color: var(--cdn-text);
+  box-shadow: var(--cdn-shadow-card);
+  position: relative;
+  overflow: hidden;
+  min-height: 72px;
+}
+
+.cdn-node-option:hover:not(:disabled) {
+  background: var(--cdn-bg-card-hover);
+  border-color: var(--cdn-border-hover);
+  box-shadow: var(--cdn-shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+.cdn-node-option:active:not(:disabled) {
+  transform: scale(0.98) translateY(0);
+}
+
+.cdn-node-option:focus-visible:not(:disabled) {
+  border-color: var(--cdn-accent);
+  box-shadow: var(--cdn-shadow-focus);
+}
+
+.cdn-node-option.cdn-node-selected {
+  background: var(--cdn-accent-light);
+  border-color: var(--cdn-accent);
+  box-shadow: 0 0 0 1px var(--cdn-accent), var(--cdn-shadow-card);
+}
+
+.cdn-node-option.cdn-node-selected .cdn-node-name {
+  color: var(--cdn-accent);
+}
+
+/* Remove the old left-bar indicator for card layout */
+.cdn-node-option.cdn-node-selected::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--cdn-accent);
+  border-radius: 2px 0 0 2px;
+}
+
+.cdn-node-option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Inside card: top row = name + latency, bottom row = region + desc */
+.cdn-node-option .cdn-node-info {
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cdn-node-option .cdn-node-name {
+  font-size: var(--cdn-font-size);
+}
+
+/* Latency badge in card: absolute top-right */
+.cdn-node-option .cdn-latency {
+  position: absolute;
+  top: var(--cdn-spacing-sm);
+  right: var(--cdn-spacing-sm);
+}
+
+/* ---- Node Description ---- */
+.cdn-node-desc {
+  font-size: var(--cdn-font-size-xs);
+  color: var(--cdn-text-muted);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+/* ---- Empty State ---- */
+.cdn-no-nodes {
+  grid-column: 1 / -1;
+  padding: 32px var(--cdn-spacing-lg);
+  text-align: center;
+  color: var(--cdn-text-muted);
+  font-size: var(--cdn-font-size-sm);
+}
+
+/* ---- Backdrop ---- */
+.cdn-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+/* ---- Scrollbar ---- */
 .cdn-node-list::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 .cdn-node-list::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 3px;
+  background: transparent;
 }
 
 .cdn-node-list::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--cdn-border);
   border-radius: 3px;
 }
 
 .cdn-node-list::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--cdn-text-muted);
+}
+
+.cdn-node-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--cdn-border) transparent;
 }

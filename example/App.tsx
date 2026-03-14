@@ -7,14 +7,14 @@ import {
   createGitHubCDNConfig,
 } from '../src';
 
-/**
- * 示例：CDN 图片组件
- * 自动使用选中的 CDN 节点加载图片
- */
-function CDNImage({ 
-  path, 
-  alt, 
-  ...props 
+// ============================================================
+// 示例：CDN 图片组件
+// ============================================================
+
+function CDNImage({
+  path,
+  alt,
+  ...props
 }: React.ImgHTMLAttributes<HTMLImageElement> & { path: string }) {
   const url = useCDNUrl(path);
   const { currentNode } = useCDN();
@@ -24,24 +24,27 @@ function CDNImage({
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
       {!loaded && !error && (
-        <div style={{ 
-          padding: '20px', 
-          background: '#f3f4f6', 
-          borderRadius: '4px',
-          textAlign: 'center' 
+        <div style={{
+          padding: '32px',
+          background: '#f1f5f9',
+          borderRadius: '10px',
+          textAlign: 'center',
+          color: '#64748b',
+          fontSize: '14px',
         }}>
-          加载中...
+          loading...
         </div>
       )}
       {error && (
-        <div style={{ 
-          padding: '20px', 
-          background: '#fee2e2', 
-          borderRadius: '4px',
+        <div style={{
+          padding: '32px',
+          background: '#fef2f2',
+          borderRadius: '10px',
           textAlign: 'center',
-          color: '#dc2626'
+          color: '#dc2626',
+          fontSize: '14px',
         }}>
-          加载失败
+          load fail
         </div>
       )}
       <img
@@ -50,40 +53,43 @@ function CDNImage({
         alt={alt}
         onLoad={() => setLoaded(true)}
         onError={() => setError(true)}
-        style={{ 
+        style={{
           display: loaded && !error ? 'block' : 'none',
           maxWidth: '100%',
-          ...props.style 
+          borderRadius: '10px',
+          ...props.style,
         }}
       />
-      {currentNode && (
+      {currentNode && loaded && (
         <div style={{
           position: 'absolute',
-          bottom: '4px',
-          right: '4px',
-          background: 'rgba(0,0,0,0.7)',
+          bottom: '8px',
+          right: '8px',
+          background: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(4px)',
           color: 'white',
-          padding: '2px 6px',
-          borderRadius: '3px',
-          fontSize: '10px',
+          padding: '3px 8px',
+          borderRadius: '6px',
+          fontSize: '11px',
+          fontWeight: 500,
         }}>
-          {currentNode.name}
+          via {currentNode.name}
         </div>
       )}
     </div>
   );
 }
 
-/**
- * 示例：CDN 链接组件
- */
-function CDNLink({ 
-  path, 
-  children, 
-  ...props 
+// ============================================================
+// 示例：CDN 链接组件
+// ============================================================
+
+function CDNLink({
+  path,
+  children,
+  ...props
 }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { path: string }) {
   const url = useCDNUrl(path);
-  
   return (
     <a {...props} href={url}>
       {children}
@@ -91,112 +97,169 @@ function CDNLink({
   );
 }
 
-/**
- * 示例主应用
- */
-function ExampleApp() {
-  // 创建 CDN 配置
-  const cdnConfig = createGitHubCDNConfig({
-    githubUser: 'facebook',
-    githubRepo: 'react',
-    githubRef: 'main',
-    autoSelectBest: true,
-  });
+// ============================================================
+// URL 显示组件
+// ============================================================
 
-  return (
-    <CDNProvider 
-      config={cdnConfig}
-      onInitialized={(manager) => {
-        console.log('CDN Manager initialized:', manager.getCurrentNode());
-      }}
-      onNodeChange={(node) => {
-        console.log('CDN node changed:', node);
-      }}
-    >
-      <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-        <h1>CDN 节点选择器示例</h1>
-        
-        {/* CDN 节点选择器 */}
-        <div style={{ marginBottom: '30px' }}>
-          <CDNNodeSelector
-            showLatency={true}
-            showRegion={true}
-            showRefreshButton={true}
-            onTestComplete={(results) => {
-              console.log('Latency test completed:', results);
-            }}
-          />
-        </div>
-
-        {/* 使用示例 */}
-        <div style={{ marginBottom: '30px' }}>
-          <h2>图片加载示例</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-            <CDNImage 
-              path="/scripts/rollup/build.js" 
-              alt="示例文件"
-              style={{ width: '100%', height: 'auto' }}
-            />
-          </div>
-        </div>
-
-        {/* 文件链接示例 */}
-        <div style={{ marginBottom: '30px' }}>
-          <h2>文件链接示例</h2>
-          <CDNLink 
-            path="/README.md"
-            target="_blank"
-            style={{ color: '#3b82f6', textDecoration: 'underline' }}
-          >
-            查看 README.md
-          </CDNLink>
-        </div>
-
-        {/* 实时 URL 显示 */}
-        <div style={{ marginBottom: '30px' }}>
-          <h2>实时 URL 构建</h2>
-          <URLDisplay path="/package.json" />
-        </div>
-      </div>
-    </CDNProvider>
-  );
-}
-
-/**
- * URL 显示组件
- */
 function URLDisplay({ path }: { path: string }) {
   const url = useCDNUrl(path);
   const { currentNode, isInitialized } = useCDN();
 
   if (!isInitialized) {
-    return <div style={{ color: '#6b7280' }}>初始化中...</div>;
+    return <div style={{ color: '#94a3b8', padding: '12px' }}>initializing...</div>;
   }
 
   return (
-    <div style={{ 
-      background: '#f9fafb', 
-      padding: '12px', 
-      borderRadius: '6px',
-      border: '1px solid #e5e7eb'
+    <div style={{
+      background: '#f8fafc',
+      padding: '16px',
+      borderRadius: '10px',
+      border: '1px solid #e2e8f0',
     }}>
-      <div style={{ marginBottom: '8px', color: '#6b7280', fontSize: '12px' }}>
-        路径: {path}
+      <div style={{ marginBottom: '6px', color: '#94a3b8', fontSize: '12px', fontWeight: 500 }}>
+        PATH: {path}
       </div>
-      <div style={{ 
-        fontFamily: 'monospace', 
+      <div style={{
+        fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
         fontSize: '13px',
         wordBreak: 'break-all',
-        color: '#1f2937'
+        color: '#1e293b',
+        lineHeight: 1.5,
       }}>
-        {url || '未选择节点'}
+        {url || '(no node selected)'}
       </div>
       {currentNode && (
-        <div style={{ marginTop: '8px', fontSize: '12px', color: '#059669' }}>
-          当前节点: {currentNode.name} ({currentNode.region})
+        <div style={{ marginTop: '8px', fontSize: '12px', color: '#3b82f6', fontWeight: 500 }}>
+          Node: {currentNode.name}
         </div>
       )}
     </div>
+  );
+}
+
+// ============================================================
+// 主应用
+// ============================================================
+
+function ExampleApp() {
+  const cdnConfig = createGitHubCDNConfig({
+    user: 'facebook',
+    repo: 'react',
+    ref: 'main',
+  });
+
+  return (
+    <CDNProvider
+      config={cdnConfig}
+      onInitialized={(node) => {
+        console.log('CDN initialized, current node:', node?.name);
+      }}
+      onNodeChange={(node) => {
+        console.log('CDN node changed to:', node.name);
+      }}
+    >
+      <div style={{
+        padding: '32px 24px',
+        maxWidth: '720px',
+        margin: '0 auto',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      }}>
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: 700,
+          color: '#1e293b',
+          marginBottom: '8px',
+        }}>
+          HX-CDN-Forge Demo
+        </h1>
+        <p style={{ color: '#64748b', marginBottom: '32px', fontSize: '15px' }}>
+          CDN smart node selector component.
+        </p>
+
+        {/* CDN 节点选择器 */}
+        <section style={{ marginBottom: '40px' }}>
+          <CDNNodeSelector
+            title="CDN Nodes"
+            showLatency={true}
+            showRegion={true}
+            showRefreshButton={true}
+            onTestComplete={(results) => {
+              console.log('Latency test results:', results);
+            }}
+          />
+        </section>
+
+        {/* 自定义渲染示例 */}
+        <section style={{ marginBottom: '40px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '16px' }}>
+            Custom Node Render
+          </h2>
+          <CDNNodeSelector
+            showRefreshButton={false}
+            renderNode={({ node, isSelected, latencyText, onSelect }) => (
+              <div
+                onClick={onSelect}
+                style={{
+                  padding: '10px 14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  background: isSelected ? '#eff6ff' : 'transparent',
+                  borderRadius: '8px',
+                  transition: 'background 0.15s',
+                }}
+              >
+                <span style={{ fontWeight: isSelected ? 600 : 400, color: isSelected ? '#2563eb' : '#1e293b' }}>
+                  {isSelected ? '> ' : ''}{node.name}
+                </span>
+                <span style={{
+                  fontSize: '12px',
+                  color: '#64748b',
+                  fontFamily: 'monospace',
+                }}>
+                  {latencyText}
+                </span>
+              </div>
+            )}
+          />
+        </section>
+
+        {/* 图片加载 */}
+        <section style={{ marginBottom: '40px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '16px' }}>
+            Image Loading
+          </h2>
+          <CDNImage
+            path="/fixtures/dom/public/react-logo.svg"
+            alt="React Logo"
+            style={{ width: '200px', height: 'auto' }}
+          />
+        </section>
+
+        {/* 文件链接 */}
+        <section style={{ marginBottom: '40px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '16px' }}>
+            File Links
+          </h2>
+          <CDNLink
+            path="/README.md"
+            target="_blank"
+            style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 500, borderBottom: '1px solid #93c5fd' }}
+          >
+            View README.md via CDN
+          </CDNLink>
+        </section>
+
+        {/* 实时 URL */}
+        <section style={{ marginBottom: '40px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '16px' }}>
+            Resolved URL
+          </h2>
+          <URLDisplay path="/package.json" />
+        </section>
+      </div>
+    </CDNProvider>
   );
 }
 
