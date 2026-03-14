@@ -163,6 +163,11 @@ export interface CDNContextValue {
   buildUrl: (resourcePath: string) => string;
   /** 获取按延迟排序的节点列表 */
   getSortedNodes: () => CDNNodeWithLatency[];
+  /**
+   * 并行分块下载资源（大文件加速）
+   * 利用多 CDN 节点 + Range Request 并行下载，支持动态负载均衡和任务窃取
+   */
+  chunkedDownload: CDNChunkedDownloadFn;
 }
 
 // ============================================================
@@ -213,6 +218,56 @@ export interface CDNNodeSelectorProps {
   renderEmpty?: () => React.ReactNode;
   /** 自定义加载状态渲染 */
   renderLoading?: () => React.ReactNode;
+}
+
+// ============================================================
+// 并行分块加载相关（由 chunkedLoader.ts 提供实现）
+// ============================================================
+
+/**
+ * CDN Context 值 — 由 useCDN() 返回（扩展 chunked download 能力）
+ */
+export interface CDNChunkedDownloadFn {
+  /**
+   * 并行分块下载资源
+   * @param resourcePath - 资源路径（如 '/large-file.zip'）
+   * @param onProgress - 进度回调
+   */
+  (resourcePath: string, onProgress?: (progress: ChunkedDownloadProgress) => void): Promise<ChunkedDownloadResult>;
+}
+
+/** 分块下载进度（简化版，用于 React 层） */
+export interface ChunkedDownloadProgress {
+  /** 已下载字节数 */
+  loaded: number;
+  /** 总字节数 */
+  total: number;
+  /** 百分比 0-100 */
+  percentage: number;
+  /** 当前速度（字节/秒） */
+  speed: number;
+  /** 预估剩余时间（秒） */
+  eta: number;
+  /** 已完成分块数 */
+  completedChunks: number;
+  /** 总分块数 */
+  totalChunks: number;
+}
+
+/** 分块下载结果（简化版，用于 React 层） */
+export interface ChunkedDownloadResult {
+  /** 下载完成的 Blob */
+  blob: Blob;
+  /** 文件大小 */
+  totalSize: number;
+  /** 耗时（毫秒） */
+  totalTime: number;
+  /** 是否使用了并行模式 */
+  usedParallelMode: boolean;
+  /** MIME 类型 */
+  contentType: string;
+  /** 各节点贡献 */
+  nodeContributions: Map<string, { bytes: number; chunks: number; avgSpeed: number }>;
 }
 
 // ============================================================

@@ -5,8 +5,11 @@ import type {
   CDNNodeWithLatency,
   CDNContextValue,
   CDNProviderProps,
+  ChunkedDownloadProgress,
+  ChunkedDownloadResult,
 } from '../types/cdn';
 import { CDNManager } from '../utils/cdnManager';
+import { ChunkedLoader } from '../utils/chunkedLoader';
 
 const CDNCtx = createContext<CDNContextValue | null>(null);
 
@@ -137,6 +140,64 @@ export function CDNProvider({
     return manager.getSortedNodes();
   }, []);
 
+  // 分块加载器（单例）
+  const loaderRef = useRef<ChunkedLoader | null>(null);
+  if (!loaderRef.current) {
+    loaderRef.current = new ChunkedLoader();
+  }
+
+  // 并行分块下载
+  const chunkedDownload = useCallback(
+    async (
+      resourcePath: string,
+      onProgress?: (progress: ChunkedDownloadProgress) => void,
+    ): Promise<ChunkedDownloadResult> => {
+      const manager = managerRef.current;
+      const loader = loaderRef.current;
+      if (!manager || !loader) {
+        throw new Error('CDN Manager or ChunkedLoader not initialized');
+      }
+
+      const allNodes = manager.getAllNodes().filter((n) => n.enabled !== false);
+      const cfg = manager.getConfig();
+
+      // 构建 URL 的辅助函数
+      const buildUrlForNode = (node: CDNNode, path: string) => {
+        return node.buildUrl(node.baseUrl, path, cfg.context);
+      };
+
+      const result = await loader.download(
+        allNodes,
+        buildUrlForNode,
+        resourcePath,
+        cfg.context,
+        manager.getLatencyResults(),
+        onProgress
+          ? (p) =>
+              onProgress({
+                loaded: p.loaded,
+                total: p.total,
+                percentage: p.percentage,
+                speed: p.speed,
+                eta: p.eta,
+                completedChunks: p.completedChunks,
+                totalChunks: p.totalChunks,
+              })
+          : undefined,
+      );
+
+      return {
+        blob: result.blob,
+        totalSize: result.totalSize,
+        totalTime: result.totalTime,
+        usedParallelMode: result.usedParallelMode,
+        contentType: result.contentType,
+        nodeContributions: result.nodeContributions,
+      };
+    },
+    [],
+  );
+
   const value = useMemo<CDNContextValue>(
     () => ({
       config,
@@ -149,8 +210,9 @@ export function CDNProvider({
       testAllNodes,
       buildUrl,
       getSortedNodes,
+      chunkedDownload,
     }),
-    [config, currentNode, nodes, isTesting, isInitialized, latencyResults, selectNode, testAllNodes, buildUrl, getSortedNodes],
+    [config, currentNode, nodes, isTesting, isInitialized, latencyResults, selectNode, testAllNodes, buildUrl, getSortedNodes, chunkedDownload],
   );
 
   return <CDNCtx.Provider value={value}>{children}</CDNCtx.Provider>;
@@ -204,4 +266,25 @@ export function useCurrentCDNNode(): CDNNode | null {
  */
 export function useCDNStatus(): CDNContextValue {
   return useCDN();
+}
+
+/**
+ * 便捷 Hook：获取并行分块下载函数
+ *
+ * @example
+ * ```tsx
+ * const chunkedDownload = useCDNChunkedDownload();
+ *
+ * const handleDownload = async () => {
+ *   const result = await chunkedDownload('/large-file.bin', (progress) => {
+ *     console.log(`${progress.percentage}% - ${(progress.speed / 1024 / 1024).toFixed(1)} MB/s`);
+ *   });
+ *   // result.blob 是下载完成的数据
+ *   const url = URL.createObjectURL(result.blob);
+ * };
+ * ```
+ */
+export function useCDNChunkedDownload() {
+  const { chunkedDownload } = useCDN();
+  return chunkedDownload;
 }

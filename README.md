@@ -31,6 +31,17 @@ HX-CDN-Forge 是一个灵活的 CDN 智能选择器, 支持多种 CDN 源类型,
 - **🛡️ TypeScript 支持** - 完整的类型定义, 开发体验友好
 - **🌏 多源支持** - 支持 GitHub、Cloudflare Workers、NPM、自定义 CDN
 
+### 🔥 并行分块加载(大文件加速)
+
+针对 10MB~20MB+ 的大文件场景, HX-CDN-Forge 提供了基于 HTTP Range Request 的**多 CDN 并行分块下载**能力:
+
+- **多节点并行** - 同一文件的不同分块分配给不同 CDN 节点同时下载
+- **动态负载均衡** - 基于 EWMA 实时速度估计, 自动将更多分块分配给更快的节点
+- **任务窃取** - 快速节点完成自己的分块后, 自动接管慢速节点的待执行任务
+- **自适应降级** - 自动探测 Range 支持; 不支持时回退到单连接下载
+- **智能分块** - 默认 2MB 分块, 可配置; 小文件自动跳过分块
+- **进度追踪** - 实时回报下载进度、速度、ETA 和各节点贡献
+
 ### 📦 支持的 CDN 源类型
 
 | 源类型 | 说明 | 预设节点 |
@@ -39,6 +50,20 @@ HX-CDN-Forge 是一个灵活的 CDN 智能选择器, 支持多种 CDN 源类型,
 | **Cloudflare** | Cloudflare Workers 代理 GitHub 资源 | 自定义 Worker 域名 |
 | **NPM** | NPM 包资源 | jsDelivr、unpkg、esm.sh |
 | **Custom** | 完全自定义 CDN 配置 | 自定义 URL 构建逻辑 |
+
+### 📏 各 CDN 节点文件大小限制与 Range 支持
+
+| CDN 节点 | 单文件大小限制 | 支持 Range Request | 备注 |
+|----------|-------------|-------------------|------|
+| **jsDelivr (Main/Fastly/Testing)** | 20 MB | ✅ 支持 | 超限返回 403; GitHub 仓库总体 50MB |
+| **JSD Mirror** | 20 MB | ✅ 支持 | 继承 jsDelivr 限制, 腾讯云 EdgeOne 加速 |
+| **Zstatic** | 20 MB | ✅ 支持 | 继承 jsDelivr 限制, 镜像回源 |
+| **GitHub Raw** | 100 MB | ✅ 支持 | Git 推送单文件限制, 有速率限制 |
+| **unpkg** | ~20 MB | ✅ 支持 | NPM 包大小限制 |
+| **esm.sh** | ~20 MB | ✅ 支持 | ESM 模块 CDN |
+| **Cloudflare Workers** | 无限制 | ✅ 支持 | 流式传输, 无响应体大小限制 |
+
+> 💡 **大文件建议**: 对于 10MB+ 的文件, 推荐使用并行分块下载功能, 充分利用多个 CDN 节点的带宽。
 
 ---
 
@@ -301,6 +326,108 @@ const config = createMixedCDNConfig({
 
 ---
 
+### 场景 6: 并行分块下载大文件
+
+对于 10MB~20MB+ 的大文件, 使用多 CDN 并行分块下载显著提升速度。
+
+**React Hook 方式:**
+
+```tsx
+import { CDNProvider, useCDNChunkedDownload, createGitHubCDNConfig } from 'hx-cdn-forge';
+
+function App() {
+  const config = createGitHubCDNConfig({
+    user: 'HengXin666',
+    repo: 'HX-CDN-Forge',
+    ref: 'main',
+  });
+
+  return (
+    <CDNProvider config={config}>
+      <LargeFileDownloader />
+    </CDNProvider>
+  );
+}
+
+function LargeFileDownloader() {
+  const chunkedDownload = useCDNChunkedDownload();
+  const [progress, setProgress] = useState({ percentage: 0, speed: 0 });
+
+  const handleDownload = async () => {
+    const result = await chunkedDownload('/assets/large-model.bin', (p) => {
+      setProgress({
+        percentage: p.percentage,
+        speed: p.speed / 1024 / 1024, // MB/s
+      });
+    });
+
+    // result.blob 是完整的文件 Blob
+    const url = URL.createObjectURL(result.blob);
+    console.log(`下载完成! ${result.totalSize} bytes in ${result.totalTime}ms`);
+    console.log(`使用并行模式: ${result.usedParallelMode}`);
+
+    // 查看各节点贡献
+    for (const [nodeId, contrib] of result.nodeContributions) {
+      console.log(`${nodeId}: ${contrib.chunks} chunks, ${contrib.bytes} bytes`);
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={handleDownload}>下载大文件</button>
+      <p>进度: {progress.percentage}% | 速度: {progress.speed.toFixed(1)} MB/s</p>
+    </div>
+  );
+}
+```
+
+**直接使用 ChunkedLoader(无需 React):**
+
+```ts
+import { ChunkedLoader, CDN_NODE_TEMPLATES } from 'hx-cdn-forge';
+
+const loader = new ChunkedLoader({
+  chunkSize: 2 * 1024 * 1024,  // 2MB 分块
+  maxConcurrency: 6,            // 最大 6 个并发连接
+  enableWorkStealing: true,     // 启用任务窃取
+});
+
+const nodes = [
+  CDN_NODE_TEMPLATES.github.jsdelivr_main,
+  CDN_NODE_TEMPLATES.github.jsdelivr_fastly,
+  CDN_NODE_TEMPLATES.github.github_raw,
+];
+
+const context = { githubUser: 'HengXin666', githubRepo: 'my-repo', githubRef: 'main' };
+
+const result = await loader.download(
+  nodes,
+  (node, path, ctx) => node.buildUrl(node.baseUrl, path, ctx),
+  '/large-file.zip',
+  context,
+  undefined, // latency results (optional)
+  (progress) => console.log(`${progress.percentage}%`),
+);
+```
+
+**工作原理:**
+
+```
+文件: large-file.bin (15MB)
+  ├── Chunk 0 (0-2MB)   → jsDelivr Main   [===========] 完成 320ms
+  ├── Chunk 1 (2-4MB)   → jsDelivr Fastly [===========] 完成 280ms
+  ├── Chunk 2 (4-6MB)   → GitHub Raw      [===========] 完成 450ms
+  ├── Chunk 3 (6-8MB)   → jsDelivr Main   [===========] 完成 310ms  ← 动态再分配
+  ├── Chunk 4 (8-10MB)  → jsDelivr Fastly [===========] 完成 290ms
+  ├── Chunk 5 (10-12MB) → jsDelivr Main   [===========] 完成 300ms  ← 任务窃取
+  ├── Chunk 6 (12-14MB) → jsDelivr Fastly [===========] 完成 285ms
+  └── Chunk 7 (14-15MB) → jsDelivr Main   [===========] 完成 150ms
+                                           ↓
+                                     Blob 重组 → 完整文件
+```
+
+---
+
 ## API 文档
 
 ### 配置创建函数
@@ -406,6 +533,55 @@ const {
 } = useCDNStatus();
 ```
 
+#### `useCDNChunkedDownload()`
+
+获取并行分块下载函数。
+
+```typescript
+const chunkedDownload = useCDNChunkedDownload();
+
+const result = await chunkedDownload('/large-file.bin', (progress) => {
+  console.log(`${progress.percentage}% | ${(progress.speed / 1024 / 1024).toFixed(1)} MB/s | ETA: ${progress.eta.toFixed(1)}s`);
+});
+// result: { blob, totalSize, totalTime, usedParallelMode, contentType, nodeContributions }
+```
+
+### 并行分块加载器
+
+#### `ChunkedLoader`
+
+独立的并行分块下载引擎, 可在 React 和非 React 环境中使用。
+
+```typescript
+import { ChunkedLoader, CDN_NODE_LIMITS } from 'hx-cdn-forge';
+
+// 查看各 CDN 节点的已知文件大小限制
+console.log(CDN_NODE_LIMITS);
+// {
+//   'jsdelivr-main': { maxFileSize: 20971520, supportsRange: true },
+//   'github-raw':    { maxFileSize: 104857600, supportsRange: true },
+//   'gh-proxy-public': { maxFileSize: -1, supportsRange: true },
+//   ...
+// }
+
+// 创建加载器
+const loader = new ChunkedLoader({
+  chunkSize: 2 * 1024 * 1024,           // 分块大小 (默认 2MB)
+  maxConcurrency: 6,                     // 最大并发连接数 (默认 6)
+  chunkTimeout: 30000,                   // 单分块超时 (默认 30s)
+  maxRetries: 3,                         // 单分块重试次数 (默认 3)
+  enableWorkStealing: true,              // 启用任务窃取 (默认 true)
+  singleConnectionThreshold: 1048576,    // 小于此值使用单连接 (默认 1MB)
+});
+
+// 探测节点 Range 支持
+const probeResult = await loader.probeNode(node, url);
+// { supportsRange: true, contentLength: 15728640, contentType: 'application/octet-stream' }
+
+// 并行分块下载
+const result = await loader.download(nodes, buildUrlFn, path, context, latencyResults, onProgress);
+```
+
 ### React Components
 
 #### `<CDNProvider>`
@@ -443,6 +619,8 @@ CDN 节点选择器 UI 组件。
 | 前端组件 | ✅ React UI | ❌ | ❌ |
 | 自动选择最快节点 | ✅ | ❌ 仅故障转移 | ❌ |
 | 用户手动切换 | ✅ | ❌ | ❌ |
+| **并行分块下载** | ✅ 多CDN并行+负载均衡 | ❌ | ❌ |
+| **任务窃取** | ✅ 自动重分配 | ❌ | ❌ |
 | TypeScript 支持 | ✅ | ❌ | 部分 |
 | 中国友好 | ✅ 内置国内镜像 | ❌ | ✅ |
 

@@ -19,6 +19,9 @@ export type {
   GitHubCDNOptions,
   CloudflareCDNOptions,
   NPMCDNOptions,
+  CDNChunkedDownloadFn,
+  ChunkedDownloadProgress,
+  ChunkedDownloadResult,
 } from './types/cdn';
 
 // ---- Utils ----
@@ -33,6 +36,23 @@ export {
   createMixedCDNConfig,
 } from './utils/cdnManager';
 
+// ---- Chunked Loader ----
+export {
+  ChunkedLoader,
+  defaultChunkedLoader,
+  CDN_NODE_LIMITS,
+} from './utils/chunkedLoader';
+export type {
+  CDNNodeCapability,
+  Chunk,
+  ChunkStatus,
+  ChunkTask,
+  WorkerStats,
+  ChunkedLoadOptions,
+  DownloadProgress,
+  DownloadResult,
+} from './utils/chunkedLoader';
+
 // ---- Context & Hooks ----
 export {
   CDNProvider,
@@ -40,6 +60,7 @@ export {
   useCDNUrl,
   useCDNStatus,
   useCurrentCDNNode,
+  useCDNChunkedDownload,
 } from './contexts/CDNContext';
 
 // ---- Components ----
