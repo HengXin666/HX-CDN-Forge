@@ -2,16 +2,16 @@
 
 # HX-CDN-Forge
 
-**一个灵活的 React + TypeScript CDN 节点选择器**
+**GitHub 文件 CDN 代理 + 大文件差分切片 + 多 CDN 并行下载**
 
-支持 GitHub、Cloudflare、NPM 和自定义 CDN 源
+一次 `reqByCDN()` 调用，自动处理一切
 
 [![npm version](https://img.shields.io/npm/v/hx-cdn-forge.svg?style=flat-square)](https://www.npmjs.com/package/hx-cdn-forge)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3%2B-blue?style=flat-square)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-18%2B-61dafb?style=flat-square)](https://reactjs.org/)
+[![React](https://img.shields.io/badge/React-16.8%2B-61dafb?style=flat-square)](https://reactjs.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-[功能特性](#功能特性) • [快速开始](#快速开始) • [使用场景](#使用场景) • [API 文档](#api-文档) • [示例](#示例)
+[功能特性](#功能特性) • [快速开始](#快速开始) • [CLI 切片工具](#cli-切片工具) • [API 文档](#api-文档) • [Tag 版本管理](#tag-版本管理)
 
 </div>
 
@@ -19,51 +19,33 @@
 
 ## 功能特性
 
-HX-CDN-Forge 是一个灵活的 CDN 智能选择器, 支持多种 CDN 源类型, 解决了静态资源访问不稳定的问题。
+HX-CDN-Forge v2 专注于 **GitHub 文件的 CDN 代理加速**，提供对使用者完全透明的大文件支持。
 
-### 🚀 核心功能
+### 🚀 核心能力
 
-- **⚡ 实时延迟测速** - 自动测试所有配置的 CDN 节点延迟
-- **🎯 智能节点选择** - 首次加载自动选择延迟最低的节点
-- **🔄 用户手动切换** - 提供可视化界面, 支持用户手动选择节点
-- **📊 延迟排序显示** - 节点按延迟时间排序, 一目了然
-- **💾 持久化存储** - 用户选择自动保存, 下次访问自动恢复
-- **🛡️ TypeScript 支持** - 完整的类型定义, 开发体验友好
-- **🌏 多源支持** - 支持 GitHub、Cloudflare Workers、NPM、自定义 CDN
+- **⚡ 透明请求** — `await reqByCDN("path")` 自动检测文件是否已切片，透明下载并拼接
+- **✂️ 大文件差分切片** — CLI 工具将 >20MB 的文件切片，生成 `info.yaml` 清单 + `.cache.yaml` 增量缓存
+- **🔥 多 CDN 并行下载** — 不同分片分配给不同 CDN 节点，动态负载均衡 + 任务窃取
+- **🚀 极速模式 (Turbo)** — 同一分片从多个 CDN 同时请求，`Promise.any()` 取最快响应
+- **🏷️ Tag 版本管理** — 通过 `bot-{commitId}-{timestamp}` tag 避免 jsDelivr 分支缓存失效
+- **⚡ 实时延迟测速** — 自动测试所有 CDN 节点，选择最快的
+- **💾 持久化存储** — 用户的节点选择自动保存到 localStorage
+- **🛡️ TypeScript** — 完整类型定义
+- **⚛️ React + 纯 JS** — `ForgeEngine` 可独立使用，也提供 React Context/Hooks
 
-### 🔥 并行分块加载(大文件加速)
+### 📦 内置 CDN 节点
 
-针对 10MB~20MB+ 的大文件场景, HX-CDN-Forge 提供了基于 HTTP Range Request 的**多 CDN 并行分块下载**能力:
+| CDN 节点 | 地区 | 单文件限制 | 说明 |
+|----------|------|-----------|------|
+| **jsDelivr (Main)** | 全球 | 20 MB | jsDelivr 主节点 |
+| **jsDelivr (Fastly)** | 全球 | 20 MB | Fastly CDN 加速 |
+| **jsDelivr (Testing)** | 全球 | 20 MB | 测试节点 |
+| **JSD Mirror** | 中国 | 20 MB | 腾讯云 EdgeOne 加速镜像 |
+| **Zstatic** | 中国 | 20 MB | Zstatic CDN 镜像 |
+| **GitHub Raw** | 全球 | 100 MB | GitHub 原始文件服务 |
+| **Cloudflare Worker** | 全球 | 无限制 | 自定义 Worker 代理 |
 
-- **多节点并行** - 同一文件的不同分块分配给不同 CDN 节点同时下载
-- **动态负载均衡** - 基于 EWMA 实时速度估计, 自动将更多分块分配给更快的节点
-- **任务窃取** - 快速节点完成自己的分块后, 自动接管慢速节点的待执行任务
-- **自适应降级** - 自动探测 Range 支持; 不支持时回退到单连接下载
-- **智能分块** - 默认 2MB 分块, 可配置; 小文件自动跳过分块
-- **进度追踪** - 实时回报下载进度、速度、ETA 和各节点贡献
-
-### 📦 支持的 CDN 源类型
-
-| 源类型 | 说明 | 预设节点 |
-|-------|------|---------|
-| **GitHub** | GitHub 仓库资源(raw files、releases、archives) | jsDelivr、JSD Mirror、Zstatic、GitHub Raw |
-| **Cloudflare** | Cloudflare Workers 代理 GitHub 资源 | 自定义 Worker 域名 |
-| **NPM** | NPM 包资源 | jsDelivr、unpkg、esm.sh |
-| **Custom** | 完全自定义 CDN 配置 | 自定义 URL 构建逻辑 |
-
-### 📏 各 CDN 节点文件大小限制与 Range 支持
-
-| CDN 节点 | 单文件大小限制 | 支持 Range Request | 备注 |
-|----------|-------------|-------------------|------|
-| **jsDelivr (Main/Fastly/Testing)** | 20 MB | ✅ 支持 | 超限返回 403; GitHub 仓库总体 50MB |
-| **JSD Mirror** | 20 MB | ✅ 支持 | 继承 jsDelivr 限制, 腾讯云 EdgeOne 加速 |
-| **Zstatic** | 20 MB | ✅ 支持 | 继承 jsDelivr 限制, 镜像回源 |
-| **GitHub Raw** | 100 MB | ✅ 支持 | Git 推送单文件限制, 有速率限制 |
-| **unpkg** | ~20 MB | ✅ 支持 | NPM 包大小限制 |
-| **esm.sh** | ~20 MB | ✅ 支持 | ESM 模块 CDN |
-| **Cloudflare Workers** | 无限制 | ✅ 支持 | 流式传输, 无响应体大小限制 |
-
-> 💡 **大文件建议**: 对于 10MB+ 的文件, 推荐使用并行分块下载功能, 充分利用多个 CDN 节点的带宽。
+> 💡 内置 6 个预设节点 + 支持自定义 Cloudflare Worker 代理节点。大于 20MB 的文件请使用 CLI 切片工具预处理。
 
 ---
 
@@ -74,620 +56,727 @@ HX-CDN-Forge 是一个灵活的 CDN 智能选择器, 支持多种 CDN 源类型,
 ```bash
 npm install hx-cdn-forge
 # 或
-yarn add hx-cdn-forge
-# 或
 pnpm add hx-cdn-forge
 ```
 
----
-
-## 使用场景
-
-### 场景 1: GitHub 资源加速
-
-加速访问 GitHub 仓库中的文件(图片、音频、视频等)。
+### 基础使用 (React)
 
 ```tsx
-import { CDNProvider, CDNNodeSelector, useCDNUrl, createGitHubCDNConfig } from 'hx-cdn-forge';
-import 'hx-cdn-forge/dist/styles.css';
+import { CDNProvider, useCDNUrl, useReqByCDN, createForgeConfig } from 'hx-cdn-forge';
+import 'hx-cdn-forge/styles.css';
 
-function App() {
-  const config = createGitHubCDNConfig({
-    githubUser: 'HengXin666',
-    githubRepo: 'HX-CDN-Forge',
-    githubRef: 'main', // 或使用 commit hash
-  });
-
-  return (
-    <CDNProvider config={config}>
-      <CDNNodeSelector />
-      <MyContent />
-    </CDNProvider>
-  );
-}
-
-function MyContent() {
-  const getCdnUrl = useCDNUrl();
-
-  return (
-    <div>
-      <img src={getCdnUrl('/screenshots/initial-load.png')} alt="截图" />
-      <audio src={getCdnUrl('/music/song.mp3')} controls />
-    </div>
-  );
-}
-```
-
-**预设的 GitHub CDN 节点**:
-- jsDelivr (Main) - 全球节点
-- jsDelivr (Fastly) - Fastly CDN
-- jsDelivr (Testing) - 测试节点
-- JSD Mirror - 中国大陆镜像
-- Zstatic - 中国大陆镜像
-- GitHub Raw - 官方源
-
----
-
-### 场景 2: Cloudflare Workers 代理 GitHub
-
-使用 Cloudflare Workers 代理 GitHub 资源, 在中国大陆访问速度更快。
-
-**步骤 1: 部署 gh-proxy 到 Cloudflare Workers**
-
-```bash
-# 1. 访问 https://workers.cloudflare.com/
-# 2. 创建 Worker
-# 3. 复制 gh-proxy 代码(https://github.com/hadis898/gh-proxy)
-# 4. 部署后获得域名, 例如: your-worker.workers.dev
-```
-
-**步骤 2: 在项目中使用**
-
-```tsx
-import { CDNProvider, CDNNodeSelector, useCDNUrl, createCloudflareCDNConfig } from 'hx-cdn-forge';
-import 'hx-cdn-forge/dist/styles.css';
-
-function App() {
-  const config = createCloudflareCDNConfig({
-    workerDomain: 'your-worker.workers.dev', // 你的 Worker 域名
-    githubUser: 'HengXin666',
-    githubRepo: 'HX-CDN-Forge',
-    githubRef: 'main',
-  });
-
-  return (
-    <CDNProvider config={config}>
-      <CDNNodeSelector />
-      <MyContent />
-    </CDNProvider>
-  );
-}
-
-function MyContent() {
-  const getCdnUrl = useCDNUrl();
-
-  // 使用方式与 GitHub CDN 相同
-  return <img src={getCdnUrl('/screenshots/initial-load.png')} alt="截图" />;
-}
-```
-
-**Cloudflare Workers 优势**:
-- 完全免费(每天 10 万次请求)
-- 无需服务器
-- 自带全球 CDN 加速
-- 在中国大陆访问速度快
-- 支持所有 GitHub 资源类型
-
----
-
-### 场景 3: NPM 包资源加速
-
-加速访问 NPM 包中的文件。
-
-```tsx
-import { CDNProvider, CDNNodeSelector, useCDNUrl, createNPMCDNConfig } from 'hx-cdn-forge';
-import 'hx-cdn-forge/dist/styles.css';
-
-function App() {
-  const config = createNPMCDNConfig({
-    npmPackage: 'react',
-    npmVersion: '18.2.0', // 可选, 默认 latest
-  });
-
-  return (
-    <CDNProvider config={config}>
-      <CDNNodeSelector />
-      <MyContent />
-    </CDNProvider>
-  );
-}
-
-function MyContent() {
-  const getCdnUrl = useCDNUrl();
-
-  // 获取 React 包中的文件
-  return <script src={getCdnUrl('/umd/react.production.min.js')} />;
-}
-```
-
-**预设的 NPM CDN 节点**:
-- jsDelivr (NPM)
-- unpkg
-- esm.sh
-
----
-
-### 场景 4: 混合多种 CDN 源
-
-在一个应用中混合使用多种 CDN 源。
-
-```tsx
-import {
-  CDNProvider,
-  CDNNodeSelector,
-  useCDNUrl,
-  createMixedCDNConfig,
-  CDN_NODE_TEMPLATES,
-} from 'hx-cdn-forge';
-import 'hx-cdn-forge/dist/styles.css';
-
-function App() {
-  // 创建自定义节点列表
-  const customNodes = [
-    // GitHub CDN 节点
-    CDN_NODE_TEMPLATES.github.jsd_mirror,
-    CDN_NODE_TEMPLATES.github.zstatic,
-
-    // Cloudflare Worker 节点
-    CDN_NODE_TEMPLATES.cloudflare.createWorkerNode('your-worker.workers.dev'),
-
-    // NPM CDN 节点
-    CDN_NODE_TEMPLATES.npm.unpkg,
-
-    // 完全自定义节点
-    {
-      id: 'my-custom-cdn',
-      name: '我的自定义 CDN',
-      baseUrl: 'https://cdn.example.com',
-      region: 'china',
-      sourceType: 'custom',
-      buildUrl: (baseUrl, resourcePath, context) => {
-        // 自定义 URL 构建逻辑
-        return `${baseUrl}${resourcePath}`;
-      },
-    },
-  ];
-
-  const config = createMixedCDNConfig({
-    nodes: customNodes,
-    context: {
-      githubUser: 'HengXin666',
-      githubRepo: 'HX-CDN-Forge',
-      githubRef: 'main',
-      npmPackage: 'react',
-      npmVersion: '18.2.0',
-    },
-  });
-
-  return (
-    <CDNProvider config={config}>
-      <CDNNodeSelector />
-      <MyContent />
-    </CDNProvider>
-  );
-}
-```
-
----
-
-### 场景 5: 完全自定义 CDN
-
-构建完全自定义的 CDN 配置。
-
-```tsx
-import { CDNProvider, CDNNode, createMixedCDNConfig } from 'hx-cdn-forge';
-
-const customNodes: CDNNode[] = [
-  {
-    id: 'aliyun-oss',
-    name: '阿里云 OSS',
-    baseUrl: 'https://your-bucket.oss-cn-beijing.aliyuncs.com',
-    region: 'china',
-    sourceType: 'custom',
-    buildUrl: (baseUrl, resourcePath) => {
-      const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
-      return `${baseUrl}${cleanPath}`;
-    },
-  },
-  {
-    id: 'tencent-cos',
-    name: '腾讯云 COS',
-    baseUrl: 'https://your-bucket.cos.ap-guangzhou.myqcloud.com',
-    region: 'china',
-    sourceType: 'custom',
-    buildUrl: (baseUrl, resourcePath) => {
-      const cleanPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
-      return `${baseUrl}${cleanPath}`;
-    },
-  },
-];
-
-const config = createMixedCDNConfig({
-  nodes: customNodes,
-  context: {
-    customConfig: {
-      // 自定义配置
-      enableAuth: true,
-      authToken: 'xxx',
-    },
-  },
+// 推荐使用 tag 避免 jsDelivr 缓存问题
+const config = createForgeConfig({
+  user: 'HengXin666',
+  repo: 'my-assets',
+  ref: 'bot-a1b2c3-20260329',
 });
-```
-
----
-
-### 场景 6: 并行分块下载大文件
-
-对于 10MB~20MB+ 的大文件, 使用多 CDN 并行分块下载显著提升速度。
-
-**React Hook 方式:**
-
-```tsx
-import { CDNProvider, useCDNChunkedDownload, createGitHubCDNConfig } from 'hx-cdn-forge';
 
 function App() {
-  const config = createGitHubCDNConfig({
-    user: 'HengXin666',
-    repo: 'HX-CDN-Forge',
-    ref: 'main',
-  });
-
   return (
     <CDNProvider config={config}>
-      <LargeFileDownloader />
+      <MyContent />
     </CDNProvider>
   );
 }
 
-function LargeFileDownloader() {
-  const chunkedDownload = useCDNChunkedDownload();
-  const [progress, setProgress] = useState({ percentage: 0, speed: 0 });
+function MyContent() {
+  // 小文件: 直接获取 URL
+  const imgUrl = useCDNUrl('screenshots/demo.png');
 
-  const handleDownload = async () => {
-    const result = await chunkedDownload('/assets/large-model.bin', (p) => {
-      setProgress({
-        percentage: p.percentage,
-        speed: p.speed / 1024 / 1024, // MB/s
-      });
+  // 大文件 / 任意文件: 透明请求
+  const reqByCDN = useReqByCDN();
+
+  const handleLoad = async () => {
+    const result = await reqByCDN('static/ass/loli.ass', (p) => {
+      console.log(`${p.percentage}% | ${(p.speed / 1024 / 1024).toFixed(1)} MB/s`);
     });
-
-    // result.blob 是完整的文件 Blob
-    const url = URL.createObjectURL(result.blob);
-    console.log(`下载完成! ${result.totalSize} bytes in ${result.totalTime}ms`);
-    console.log(`使用并行模式: ${result.usedParallelMode}`);
-
-    // 查看各节点贡献
-    for (const [nodeId, contrib] of result.nodeContributions) {
-      console.log(`${nodeId}: ${contrib.chunks} chunks, ${contrib.bytes} bytes`);
-    }
+    // result.blob — 完整文件 (无论原文件是否切片)
+    const text = await result.blob.text();
   };
 
   return (
     <div>
-      <button onClick={handleDownload}>下载大文件</button>
-      <p>进度: {progress.percentage}% | 速度: {progress.speed.toFixed(1)} MB/s</p>
+      <img src={imgUrl} alt="demo" />
+      <button onClick={handleLoad}>加载大文件</button>
     </div>
   );
 }
 ```
 
-**直接使用 ChunkedLoader(无需 React):**
+### 基础使用 (纯 JS / Node)
 
 ```ts
-import { ChunkedLoader, CDN_NODE_TEMPLATES } from 'hx-cdn-forge';
+import { ForgeEngine, createForgeConfig } from 'hx-cdn-forge';
 
-const loader = new ChunkedLoader({
-  chunkSize: 2 * 1024 * 1024,  // 2MB 分块
-  maxConcurrency: 6,            // 最大 6 个并发连接
-  enableWorkStealing: true,     // 启用任务窃取
+const config = createForgeConfig(
+  { user: 'HengXin666', repo: 'my-assets', ref: 'bot-a1b2c3-20260329' },
+  {
+    splitStoragePath: 'static/cdn-black',
+    mappingPrefix: 'static',
+    turboMode: true,          // 开启极速模式
+    turboConcurrentCDNs: 3,   // 每个分片同时请求 3 个 CDN
+  },
+);
+
+const engine = new ForgeEngine(config);
+await engine.initialize();
+
+// 透明请求 — 自动检测切片
+const result = await engine.reqByCDN('static/ass/loli.ass', (p) => {
+  console.log(`${p.percentage}% | ETA: ${p.eta.toFixed(1)}s`);
 });
 
-const nodes = [
-  CDN_NODE_TEMPLATES.github.jsdelivr_main,
-  CDN_NODE_TEMPLATES.github.jsdelivr_fastly,
-  CDN_NODE_TEMPLATES.github.github_raw,
-];
+console.log(`下载完成: ${result.totalSize} bytes, 耗时 ${result.totalTime.toFixed(0)}ms`);
+console.log(`使用切片模式: ${result.usedSplitMode}`);
+console.log(`使用并行模式: ${result.usedParallelMode}`);
+```
 
-const context = { githubUser: 'HengXin666', githubRepo: 'my-repo', githubRef: 'main' };
+---
 
-const result = await loader.download(
-  nodes,
-  (node, path, ctx) => node.buildUrl(node.baseUrl, path, ctx),
-  '/large-file.zip',
-  context,
-  undefined, // latency results (optional)
-  (progress) => console.log(`${progress.percentage}%`),
+## CLI 切片工具
+
+对于超过 CDN 节点单文件限制 (默认 20MB) 的大文件，需要先用 CLI 工具进行切片。
+
+### 安装 & 使用
+
+```bash
+# 全局安装后直接使用
+npm install -g hx-cdn-forge
+hx-cdn-split --help
+
+# 或通过 npx
+npx hx-cdn-split --help
+```
+
+### 基本用法
+
+```bash
+# 将 25MB 的 ASS 文件切片
+hx-cdn-split \
+  --source static/ass/loli.ass \
+  --output static/cdn-black \
+  --prefix static
+
+# 使用自定义切片大小
+hx-cdn-split -s data/big.bin -o cdn-data -p data -c 10MB
+
+# 强制重新生成 (忽略缓存)
+hx-cdn-split -s static/ass/loli.ass -o static/cdn-black -p static -f
+```
+
+### 参数说明
+
+| 参数 | 短写 | 必填 | 说明 |
+|------|------|------|------|
+| `--source` | `-s` | ✅ | 源文件路径 |
+| `--output` | `-o` | ✅ | 输出存储根目录 |
+| `--prefix` | `-p` | ❌ | 映射前缀 (从 source 路径去除) |
+| `--chunk-size` | `-c` | ❌ | 切片大小，默认 `19MB`。支持 B/KB/MB/GB 后缀 |
+| `--force` | `-f` | ❌ | 强制重新生成，忽略 `.cache.yaml` |
+| `--help` | `-h` | — | 显示帮助 |
+
+### 切片存储结构
+
+```
+仓库根目录/
+├── static/
+│   └── ass/
+│       └── loli.ass          ← 源文件 (25MB)
+│
+└── static/cdn-black/         ← splitStoragePath (配置的存储路径)
+    └── ass/
+        └── loli.ass/         ← 映射目录 (去除了 "static" 前缀)
+            ├── 0-loli.ass    ← 切片 0 (19MB)
+            ├── 1-loli.ass    ← 切片 1 (6MB)
+            ├── info.yaml     ← 切片清单
+            └── .cache.yaml   ← 源文件哈希 (增量更新检测)
+```
+
+### info.yaml 示例
+
+```yaml
+originalName: loli.ass
+totalSize: 26214400
+mimeType: text/x-ssa
+chunkSize: 19922944
+createdAt: 2026-03-29T08:00:00.000Z
+chunks:
+  - fileName: 0-loli.ass
+    index: 0
+    size: 19922944
+    sha256: a1b2c3...
+  - fileName: 1-loli.ass
+    index: 1
+    size: 6291456
+    sha256: d4e5f6...
+```
+
+### 增量更新
+
+CLI 工具会在输出目录生成 `.cache.yaml`，记录源文件的路径和 SHA-256 哈希。再次运行时：
+
+- **源文件未变化** → 自动跳过，输出 `⏭️ 源文件未变化，跳过`
+- **源文件已变化** → 重新生成所有切片
+- **使用 `--force`** → 无条件重新生成
+
+推荐在 `package.json` 中添加脚本：
+
+```json
+{
+  "scripts": {
+    "cdn:split": "hx-cdn-split -s static/ass/loli.ass -o static/cdn-black -p static"
+  }
+}
+```
+
+---
+
+## 透明请求原理
+
+`reqByCDN(filePath)` 的内部流程：
+
+```
+reqByCDN("static/ass/loli.ass")
+        │
+        ▼
+┌─────────────────────────┐
+│ 1. 计算 info.yaml 路径  │
+│    splitStoragePath +    │
+│    mapPath(filePath)     │
+│    + "/info.yaml"        │
+└────────────┬────────────┘
+             │
+             ▼
+     ┌───────────────┐
+     │ 2. 请求 CDN   │
+     │  获取 info.yaml│
+     └───────┬───────┘
+             │
+      ┌──────┴──────┐
+      │             │
+   200 OK        404
+      │             │
+      ▼             ▼
+┌───────────┐ ┌──────────────┐
+│ 3A. 解析  │ │ 3B. 直接下载 │
+│ info.yaml │ │ 原始文件     │
+│ 并行下载  │ │ (单文件模式) │
+│ 各切片    │ └──────────────┘
+│ → 拼接    │
+└───────────┘
+      │
+      ▼
+  DownloadResult
+  { blob, totalSize, usedSplitMode, ... }
+```
+
+**对调用者完全透明** — 无论文件是否切片，API 调用方式完全相同。
+
+---
+
+## 多 CDN 并行下载
+
+### 标准模式
+
+不同分片分配给不同 CDN 节点，充分利用多路带宽：
+
+```
+文件: big.bin (38MB, 切片为 2 块)
+
+  切片 0 (19MB) ─── jsDelivr Main   ────→ ███████████ 完成 1.2s
+  切片 1 (19MB) ─── JSD Mirror     ────→ ███████████ 完成 0.9s
+                                          ↓
+                                   Blob 拼接 → 完整文件
+```
+
+特性：
+- **EWMA 速度估计** — 实时追踪各节点下载速度
+- **动态负载均衡** — 更多任务分配给更快的节点
+- **任务窃取** — 快速节点完成后自动接管慢速节点的待执行任务
+
+### 极速模式 (Turbo Mode)
+
+同一分片同时从多个 CDN 请求，`Promise.any()` 取最快响应：
+
+```
+切片 0 (19MB):
+  ├── jsDelivr Main   ────→ ███████ 最先完成 ✅ → 采用
+  ├── JSD Mirror     ────→ █████████ (abort)
+  └── Zstatic        ────→ ████████████ (abort)
+
+切片 1 (19MB):
+  ├── jsDelivr Main   ────→ ██████████ (abort)
+  ├── JSD Mirror     ────→ ██████ 最先完成 ✅ → 采用
+  └── Zstatic        ────→ █████████████ (abort)
+```
+
+**牺牲带宽换取最低延迟**，适合对加载速度有极致要求的场景。
+
+开启极速模式：
+
+```ts
+const config = createForgeConfig(
+  { user: '...', repo: '...', ref: '...' },
+  {
+    splitStoragePath: 'static/cdn-black',
+    mappingPrefix: 'static',
+    turboMode: true,          // 开启极速模式
+    turboConcurrentCDNs: 3,   // 每个分片同时请求 3 个 CDN
+  },
 );
 ```
 
-**工作原理:**
+---
+
+## Tag 版本管理
+
+### 问题
+
+jsDelivr 对分支 (如 `main`) 的缓存时间很长。当文件内容更新后，CDN 可能长时间返回旧数据。
+
+使用 commit hash 作为 ref 需要 **两次 git 提交**：
+1. 第一次提交数据 (才能获取 commit hash)
+2. 第二次提交 hash 到配置中
+
+### 解决方案
+
+使用 `bot-{shortCommitId}-{timestamp}` 格式的 tag，配合 GitHub Actions 自动管理：
 
 ```
-文件: large-file.bin (15MB)
-  ├── Chunk 0 (0-2MB)   → jsDelivr Main   [===========] 完成 320ms
-  ├── Chunk 1 (2-4MB)   → jsDelivr Fastly [===========] 完成 280ms
-  ├── Chunk 2 (4-6MB)   → GitHub Raw      [===========] 完成 450ms
-  ├── Chunk 3 (6-8MB)   → jsDelivr Main   [===========] 完成 310ms  ← 动态再分配
-  ├── Chunk 4 (8-10MB)  → jsDelivr Fastly [===========] 完成 290ms
-  ├── Chunk 5 (10-12MB) → jsDelivr Main   [===========] 完成 300ms  ← 任务窃取
-  ├── Chunk 6 (12-14MB) → jsDelivr Fastly [===========] 完成 285ms
-  └── Chunk 7 (14-15MB) → jsDelivr Main   [===========] 完成 150ms
-                                           ↓
-                                     Blob 重组 → 完整文件
+推送到 main 分支
+        │
+        ▼
+  GitHub Actions
+        │
+        ├── 创建 tag: bot-a1b2c3-20260329160000
+        │
+        └── 保留最新 2 个 tag，删除更旧的
+```
+
+**只需一次 git 提交**，流水线自动创建带有当前 commit hash 的 tag。
+
+### 配置 GitHub Actions
+
+在仓库中添加 `.github/workflows/cdn-tag.yml`：
+
+```yaml
+name: CDN Tag Manager
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  create-cdn-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create and manage CDN tags
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          NEW_TAG="bot-${SHORT_SHA}-${TIMESTAMP}"
+
+          # 创建新 tag
+          git tag "${NEW_TAG}"
+          git push origin "${NEW_TAG}"
+
+          # 只保留最新 2 个 bot- tag
+          BOT_TAGS=$(git tag -l 'bot-*' --sort=-creatordate)
+          TAG_COUNT=$(echo "${BOT_TAGS}" | grep -c '^bot-' || true)
+
+          if [ "${TAG_COUNT}" -gt 2 ]; then
+            echo "${BOT_TAGS}" | tail -n +3 | while IFS= read -r tag; do
+              [ -n "${tag}" ] && git push origin --delete "${tag}" 2>/dev/null || true
+              [ -n "${tag}" ] && git tag -d "${tag}" 2>/dev/null || true
+            done
+          fi
+
+          echo "✅ CDN tag: ${NEW_TAG}"
+```
+
+### 使用 tag
+
+```ts
+const config = createForgeConfig({
+  user: 'HengXin666',
+  repo: 'my-assets',
+  ref: 'bot-a1b2c3-20260329160000', // 使用 tag 而非分支名
+});
 ```
 
 ---
 
 ## API 文档
 
-### 配置创建函数
+### `createForgeConfig(github, options?)`
 
-#### `createGitHubCDNConfig(options)`
+创建配置对象。
 
-创建 GitHub CDN 配置。
+```ts
+import { createForgeConfig } from 'hx-cdn-forge';
 
-```typescript
-const config = createGitHubCDNConfig({
-  githubUser: string;      // GitHub 用户名
-  githubRepo: string;      // GitHub 仓库名
-  githubRef: string;       // 分支名或 commit hash
-  cdnNodes?: CDNNode[];    // 可选, 自定义 CDN 节点列表
-  defaultNodeId?: string;  // 可选, 默认节点 ID
-});
+const config = createForgeConfig(
+  // GitHub 仓库信息 (必填)
+  {
+    user: 'HengXin666',
+    repo: 'my-assets',
+    ref: 'bot-a1b2c3-20260329', // branch / tag / commit hash
+  },
+  // 可选配置
+  {
+    // --- 切片相关 ---
+    splitStoragePath: 'static/cdn-black', // 切片存储根路径
+    mappingPrefix: 'static',              // 路径映射前缀
+    splitThreshold: 20 * 1024 * 1024,     // 切片阈值 (默认 20MB)
+
+    // --- 节点相关 ---
+    nodes: undefined,          // 自定义节点列表 (默认使用内置 6 个)
+    defaultNodeId: undefined,  // 默认节点 ID (默认自动测速选择)
+    autoTest: true,            // 初始化时自动测速
+
+    // --- 测速 ---
+    testTimeout: 5000,   // 测速超时 (ms)
+    testRetries: 2,      // 测速重试次数
+
+    // --- 并行下载 ---
+    maxConcurrency: 6,     // 最大并发数
+    chunkTimeout: 30000,   // 单分片超时 (ms)
+    maxRetries: 3,         // 单分片重试次数
+    enableWorkStealing: true, // 任务窃取
+
+    // --- 极速模式 ---
+    turboMode: false,        // 是否开启极速模式
+    turboConcurrentCDNs: 3,  // 极速模式下同时请求的 CDN 数量
+
+    // --- 持久化 ---
+    storageKey: 'hx-cdn-forge-node', // localStorage 键名
+  },
+);
 ```
 
-#### `createCloudflareCDNConfig(options)`
+### `ForgeEngine`
 
-创建 Cloudflare Worker CDN 配置。
+核心引擎类，独立于 React，可在任何 JS 环境使用。
 
-```typescript
-const config = createCloudflareCDNConfig({
-  workerDomain: string;    // Worker 域名, 例如: 'your-worker.workers.dev'
-  githubUser?: string;     // 可选, GitHub 用户名
-  githubRepo?: string;     // 可选, GitHub 仓库名
-  githubRef?: string;      // 可选, 分支名或 commit hash
-  additionalNodes?: CDNNode[]; // 可选, 额外的节点
-});
+```ts
+import { ForgeEngine } from 'hx-cdn-forge';
+
+const engine = new ForgeEngine(config);
+
+// 初始化 (自动测速 + 选择最快节点)
+await engine.initialize();
+
+// 透明请求
+const result = await engine.reqByCDN('static/ass/loli.ass', onProgress);
+
+// URL 构建 (小文件)
+const url = engine.buildUrl('screenshots/demo.png');
+
+// 节点管理
+engine.getNodes();                  // 获取所有节点
+engine.getCurrentNode();            // 获取当前节点
+engine.selectNode('jsd-mirror');    // 手动选择节点
+engine.getSortedNodes();            // 按延迟排序的节点
+
+// 测速
+await engine.testAllNodes();
+await engine.testAndSelectBest();
+await engine.testAllNodesStreaming((result) => { /* 流式回调 */ });
+
+// 其他
+engine.getConfig();            // 获取规范化后的配置
+engine.isInitialized();        // 是否已初始化
+engine.clearSplitInfoCache();  // 清除 info.yaml 缓存
 ```
 
-#### `createNPMCDNConfig(options)`
+### `DownloadResult`
 
-创建 NPM CDN 配置。
+`reqByCDN()` 返回的结果对象：
 
-```typescript
-const config = createNPMCDNConfig({
-  npmPackage: string;      // NPM 包名
-  npmVersion?: string;     // 可选, 版本号, 默认 latest
-  cdnNodes?: CDNNode[];    // 可选, 自定义 CDN 节点列表
-});
+```ts
+interface DownloadResult {
+  blob: Blob;                     // 完整文件数据
+  arrayBuffer: () => Promise<ArrayBuffer>;
+  totalSize: number;              // 文件大小 (字节)
+  totalTime: number;              // 耗时 (毫秒)
+  contentType: string;            // MIME 类型
+  usedSplitMode: boolean;         // 是否使用了切片下载
+  usedParallelMode: boolean;      // 是否使用了并行模式
+  nodeContributions: Map<string, {
+    bytes: number;
+    chunks: number;
+    avgSpeed: number;
+  }>;
+}
 ```
 
-#### `createMixedCDNConfig(options)`
+### `DownloadProgress`
 
-创建混合 CDN 配置。
+进度回调参数：
 
-```typescript
-const config = createMixedCDNConfig({
-  nodes: CDNNode[];        // CDN 节点列表
-  context?: CDNContext;    // 可选, 上下文信息
-});
+```ts
+interface DownloadProgress {
+  loaded: number;          // 已下载字节
+  total: number;           // 总字节
+  percentage: number;      // 百分比 (0-100)
+  speed: number;           // 当前速度 (字节/秒)
+  eta: number;             // 预估剩余时间 (秒)
+  completedChunks: number; // 已完成分片数
+  totalChunks: number;     // 总分片数
+}
 ```
 
-### CDN 节点模板
+### CDN 节点预设 & 工具
 
-#### `CDN_NODE_TEMPLATES`
+```ts
+import {
+  CDN_NODE_PRESETS,
+  DEFAULT_GITHUB_CDN_NODES,
+  createWorkerNode,
+  CDNTester,
+  getSortedNodesWithLatency,
+} from 'hx-cdn-forge';
 
-预设的 CDN 节点模板。
+// 预设节点
+CDN_NODE_PRESETS.jsdelivr_main    // jsDelivr 主节点
+CDN_NODE_PRESETS.jsdelivr_fastly  // jsDelivr Fastly
+CDN_NODE_PRESETS.jsdelivr_testing // jsDelivr Testing
+CDN_NODE_PRESETS.jsd_mirror       // JSD Mirror (中国)
+CDN_NODE_PRESETS.zstatic          // Zstatic (中国)
+CDN_NODE_PRESETS.github_raw       // GitHub Raw
 
-```typescript
-// GitHub CDN 节点
-CDN_NODE_TEMPLATES.github.jsdelivr_main
-CDN_NODE_TEMPLATES.github.jsdelivr_fastly
-CDN_NODE_TEMPLATES.github.jsdelivr_testing
-CDN_NODE_TEMPLATES.github.jsd_mirror
-CDN_NODE_TEMPLATES.github.zstatic
-CDN_NODE_TEMPLATES.github.github_raw
+// 默认节点列表 (以上 6 个)
+DEFAULT_GITHUB_CDN_NODES
 
-// Cloudflare CDN 节点
-CDN_NODE_TEMPLATES.cloudflare.createWorkerNode(domain: string)
-CDN_NODE_TEMPLATES.cloudflare.public_proxy
+// 创建 Cloudflare Worker 代理节点
+const workerNode = createWorkerNode('your-worker.workers.dev');
 
-// NPM CDN 节点
-CDN_NODE_TEMPLATES.npm.jsdelivr_npm
-CDN_NODE_TEMPLATES.npm.unpkg
-CDN_NODE_TEMPLATES.npm.esm_sh
+// 独立测速工具
+const tester = new CDNTester(5000, 2);
+const results = await tester.testAll(nodes);
+const bestId = tester.getBestNodeId(results);
 ```
 
-### React Hooks
+### Manifest 工具
 
-#### `useCDNUrl()`
+解析和序列化 `info.yaml` / `.cache.yaml` 的轻量级工具 (无外部依赖)：
 
-获取 CDN URL 构建函数。
+```ts
+import {
+  parseInfoYaml,
+  serializeInfoYaml,
+  parseCacheYaml,
+  serializeCacheYaml,
+} from 'hx-cdn-forge';
 
-```typescript
-const getCdnUrl = useCDNUrl();
-const url = getCdnUrl('/path/to/file.png');
+const info = parseInfoYaml(yamlText);   // string → SplitInfo
+const yaml = serializeInfoYaml(info);   // SplitInfo → string
+
+const cache = parseCacheYaml(yamlText); // string → SplitCache
+const cYaml = serializeCacheYaml(cache); // SplitCache → string
 ```
 
-#### `useCDNStatus()`
+---
 
-获取 CDN 状态和控制函数。
+## React API
 
-```typescript
-const {
-  currentNode,      // 当前选中的节点
-  nodeLatencies,    // 所有节点的延迟数据
-  isTesting,        // 是否正在测速
-  testLatencies,    // 手动触发测速函数
-  selectNode        // 手动选择节点函数
-} = useCDNStatus();
-```
-
-#### `useCDNChunkedDownload()`
-
-获取并行分块下载函数。
-
-```typescript
-const chunkedDownload = useCDNChunkedDownload();
-
-const result = await chunkedDownload('/large-file.bin', (progress) => {
-  console.log(`${progress.percentage}% | ${(progress.speed / 1024 / 1024).toFixed(1)} MB/s | ETA: ${progress.eta.toFixed(1)}s`);
-});
-// result: { blob, totalSize, totalTime, usedParallelMode, contentType, nodeContributions }
-```
-
-### 并行分块加载器
-
-#### `ChunkedLoader`
-
-独立的并行分块下载引擎, 可在 React 和非 React 环境中使用。
-
-```typescript
-import { ChunkedLoader, CDN_NODE_LIMITS } from 'hx-cdn-forge';
-
-// 查看各 CDN 节点的已知文件大小限制
-console.log(CDN_NODE_LIMITS);
-// {
-//   'jsdelivr-main': { maxFileSize: 20971520, supportsRange: true },
-//   'github-raw':    { maxFileSize: 104857600, supportsRange: true },
-//   'gh-proxy-public': { maxFileSize: -1, supportsRange: true },
-//   ...
-// }
-
-// 创建加载器
-const loader = new ChunkedLoader({
-  chunkSize: 2 * 1024 * 1024,           // 分块大小 (默认 2MB)
-  maxConcurrency: 6,                     // 最大并发连接数 (默认 6)
-  chunkTimeout: 30000,                   // 单分块超时 (默认 30s)
-  maxRetries: 3,                         // 单分块重试次数 (默认 3)
-  enableWorkStealing: true,              // 启用任务窃取 (默认 true)
-  singleConnectionThreshold: 1048576,    // 小于此值使用单连接 (默认 1MB)
-});
-
-// 探测节点 Range 支持
-const probeResult = await loader.probeNode(node, url);
-// { supportsRange: true, contentLength: 15728640, contentType: 'application/octet-stream' }
-
-// 并行分块下载
-const result = await loader.download(nodes, buildUrlFn, path, context, latencyResults, onProgress);
-```
-
-### React Components
-
-#### `<CDNProvider>`
-
-CDN 上下文提供者。
+### `<CDNProvider>`
 
 ```tsx
-<CDNProvider config={config}>
-  {children}
+import { CDNProvider, createForgeConfig } from 'hx-cdn-forge';
+
+const config = createForgeConfig({
+  user: 'HengXin666',
+  repo: 'my-assets',
+  ref: 'bot-a1b2c3-20260329',
+});
+
+<CDNProvider
+  config={config}
+  onInitialized={(node) => console.log('就绪:', node?.name)}
+  onNodeChange={(node) => console.log('切换到:', node.name)}
+>
+  <App />
 </CDNProvider>
 ```
 
-#### `<CDNNodeSelector>`
+### `useCDN()`
 
-CDN 节点选择器 UI 组件。
+获取完整的 CDN Context：
 
 ```tsx
+const {
+  config,           // ForgeConfig
+  currentNode,      // CDNNode | null
+  nodes,            // CDNNodeWithLatency[]
+  isTesting,        // boolean
+  isInitialized,    // boolean
+  latencyResults,   // Map<string, LatencyResult>
+  selectNode,       // (nodeId: string) => void
+  testAllNodes,     // () => Promise<LatencyResult[]>
+  reqByCDN,         // (path, onProgress?) => Promise<DownloadResult>
+  buildUrl,         // (path) => string
+  getSortedNodes,   // () => CDNNodeWithLatency[]
+} = useCDN();
+```
+
+### `useReqByCDN()`
+
+获取透明请求函数：
+
+```tsx
+const reqByCDN = useReqByCDN();
+
+const result = await reqByCDN('static/ass/loli.ass', (p) => {
+  console.log(`${p.percentage}% | ${(p.speed / 1024 / 1024).toFixed(1)} MB/s`);
+});
+// result.blob — 完整文件
+```
+
+### `useCDNUrl(path)`
+
+获取小文件的 CDN URL：
+
+```tsx
+const url = useCDNUrl('screenshots/demo.png');
+// → "https://cdn.jsdelivr.net/gh/user/repo@ref/screenshots/demo.png"
+```
+
+### `useCurrentCDNNode()`
+
+获取当前选中的 CDN 节点：
+
+```tsx
+const node = useCurrentCDNNode();
+console.log(node?.name); // "jsDelivr (Main)"
+```
+
+### `useCDNStatus()`
+
+`useCDN()` 的别名，获取完整状态。
+
+### `<CDNNodeSelector>`
+
+可视化节点选择器组件：
+
+```tsx
+import { CDNNodeSelector } from 'hx-cdn-forge';
+import 'hx-cdn-forge/styles.css';
+
 <CDNNodeSelector
+  showLatency={true}
+  showRegion={true}
   showRefreshButton={true}
-  autoTestOnMount={true}
-  className="my-selector"
+  compact={false}
+  title="CDN 节点"
+  onChange={(node) => console.log('选择:', node.name)}
+  onTestComplete={(results) => console.log('测速完成:', results)}
 />
 ```
 
 ---
 
-## 为什么选择 HX-CDN-Forge
+## 完整配置示例
 
-### 与现有方案对比
+### 基础配置 (自动测速)
 
-| 特性 | HX-CDN-Forge | 传统降级方案 | Cloudflare Workers |
-|------|-------------|------------|------------------|
-| 多源支持 | ✅ GitHub/NPM/CF/自定义 | ❌ | ❌ |
-| 运行时延迟测速 | ✅ | ❌ | ❌ |
-| 前端组件 | ✅ React UI | ❌ | ❌ |
-| 自动选择最快节点 | ✅ | ❌ 仅故障转移 | ❌ |
-| 用户手动切换 | ✅ | ❌ | ❌ |
-| **并行分块下载** | ✅ 多CDN并行+负载均衡 | ❌ | ❌ |
-| **任务窃取** | ✅ 自动重分配 | ❌ | ❌ |
-| TypeScript 支持 | ✅ | ❌ | 部分 |
-| 中国友好 | ✅ 内置国内镜像 | ❌ | ✅ |
+```ts
+const config = createForgeConfig({
+  user: 'HengXin666',
+  repo: 'my-assets',
+  ref: 'bot-a1b2c3-20260329',
+});
+```
+
+### 带切片的配置
+
+```ts
+const config = createForgeConfig(
+  { user: 'HengXin666', repo: 'my-assets', ref: 'bot-a1b2c3-20260329' },
+  {
+    splitStoragePath: 'static/cdn-black',
+    mappingPrefix: 'static',
+  },
+);
+```
+
+### 极速模式 + 自定义节点
+
+```ts
+import { CDN_NODE_PRESETS, createWorkerNode, createForgeConfig } from 'hx-cdn-forge';
+
+const config = createForgeConfig(
+  { user: 'HengXin666', repo: 'my-assets', ref: 'bot-a1b2c3-20260329' },
+  {
+    splitStoragePath: 'static/cdn-black',
+    mappingPrefix: 'static',
+    turboMode: true,
+    turboConcurrentCDNs: 3,
+    nodes: [
+      CDN_NODE_PRESETS.jsdelivr_main,
+      CDN_NODE_PRESETS.jsdelivr_fastly,
+      CDN_NODE_PRESETS.jsd_mirror,
+      CDN_NODE_PRESETS.zstatic,
+      createWorkerNode('my-proxy.workers.dev'),
+    ],
+  },
+);
+```
 
 ---
 
-## 常见问题
+## 项目结构
 
-### Q: 如何部署 Cloudflare Workers 代理 GitHub?
-
-**A:** 按照以下步骤:
-
-1. 访问 https://workers.cloudflare.com/
-2. 创建 Worker
-3. 复制 [gh-proxy](https://github.com/hadis898/gh-proxy) 的 `index.js` 代码
-4. 粘贴到 Worker 编辑器并部署
-5. 获得域名后, 使用 `createCloudflareCDNConfig()` 配置
-
-**优势**: 完全免费(每天 10 万次请求), 在中国访问速度快。
-
-### Q: 如何在中国大陆获得最佳访问速度?
-
-**A:** 推荐方案:
-
-1. **首选**: 部署 Cloudflare Workers 代理(免费、速度快)
-2. **备选**: 使用 JSD Mirror 或 Zstatic 镜像
-3. **自有资源**: 使用阿里云 OSS 或腾讯云 COS
-
-### Q: 是否支持私有 GitHub 仓库?
-
-**A:** 支持! 通过 Cloudflare Workers 代理时, 可以在 URL 中嵌入 Token:
-
-```bash
-git clone https://user:TOKEN@your-worker.workers.dev/https://github.com/user/private-repo
+```
+src/
+├── types.ts                     # 统一类型定义
+├── index.ts                     # 入口导出
+├── core/
+│   ├── config.ts                # 配置默认值 + 工厂
+│   ├── cdnNodes.ts              # CDN 节点预设 + 测速工具
+│   ├── manifest.ts              # info.yaml / .cache.yaml 解析器
+│   ├── chunkedFetcher.ts        # 多 CDN 并行分块下载引擎
+│   └── fetcher.ts               # ForgeEngine 核心引擎
+├── cli/
+│   └── split.ts                 # CLI 切片工具 (hx-cdn-split)
+└── react/
+    ├── CDNContext.tsx            # Provider + Hooks
+    └── CDNNodeSelector/
+        ├── index.tsx            # 节点选择器组件
+        └── styles.css           # 组件样式
 ```
 
 ---
 
 ## 浏览器支持
 
-- Chrome/Edge: 最新 2 个版本
+- Chrome / Edge: 最新 2 个版本
 - Firefox: 最新 2 个版本
 - Safari: 最新 2 个版本
-- Mobile Safari/Chrome: 最新 2 个版本
+- 需要 `fetch`、`ReadableStream`、`Promise.any` 支持 (ES2021+)
 
 ---
 
 ## 开发
 
 ```bash
-# 克隆仓库
 git clone https://github.com/HengXin666/HX-CDN-Forge.git
-
-# 安装依赖
+cd HX-CDN-Forge
 npm install
 
-# 启动开发服务器
-npm run dev
-
-# 构建
-npm run build
+npm run build       # 构建
+npm run dev         # 启动开发服务器
+npm run type-check  # 类型检查
+npm test            # 运行测试
 ```
-
----
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request!
 
 ---
 
@@ -699,12 +788,9 @@ MIT © HX
 
 ## 致谢
 
-本项目受到以下项目的启发:
-
-- [gh-proxy](https://github.com/hadis898/gh-proxy) - GitHub 文件加速代理
-- [jsDelivr](https://www.jsdelivr.com/) - 开源 CDN 服务
-- [JSD Mirror](https://cdn.jsdmirror.com/) - jsDelivr 中国镜像
-- [Cloudflare Workers](https://workers.cloudflare.com/) - 无服务器平台
+- [jsDelivr](https://www.jsdelivr.com/) — 开源 CDN 服务
+- [JSD Mirror](https://cdn.jsdmirror.com/) — jsDelivr 中国镜像
+- [Cloudflare Workers](https://workers.cloudflare.com/) — 无服务器平台
 
 ---
 

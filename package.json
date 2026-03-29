@@ -1,10 +1,13 @@
 {
   "name": "hx-cdn-forge",
-  "version": "1.1.0",
-  "description": "A React + TypeScript CDN node selector with latency testing and smart switching for GitHub resources",
+  "version": "2.0.0",
+  "description": "GitHub CDN proxy with transparent large-file splitting, multi-CDN parallel download, and turbo mode",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "bin": {
+    "hx-cdn-split": "./dist/cli/split.js"
+  },
   "exports": {
     ".": {
       "import": {
@@ -18,23 +21,22 @@
     },
     "./styles.css": "./dist/index.css"
   },
-
   "sideEffects": [
     "**/*.css"
   ],
   "keywords": [
     "cdn",
-    "cdn-selector",
     "cdn-forge",
-    "latency-test",
     "github-cdn",
     "jsdelivr",
+    "file-splitting",
+    "parallel-download",
+    "multi-cdn",
+    "turbo-mode",
     "react",
     "typescript",
-    "cdn-switcher",
-    "cdn-failover",
-    "performance",
-    "china-friendly"
+    "china-friendly",
+    "large-file"
   ],
   "author": "HX",
   "license": "MIT",
@@ -58,6 +60,7 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
+    "@types/node": "^25.5.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.7.0",

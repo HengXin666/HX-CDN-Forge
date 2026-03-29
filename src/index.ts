@@ -1,76 +1,73 @@
 // ============================================================
-// HX-CDN-Forge — CDN 节点智能选择器
+// HX-CDN-Forge v2 — GitHub 文件 CDN 代理 + 大文件差分切片
 // ============================================================
 
 // ---- Types ----
 export type {
-  CDNNode,
-  CDNConfig,
-  CDNContext,
-  CDNContextValue,
-  CDNProviderProps,
-  CDNSourceType,
   CDNRegion,
-  CDNLatencyResult,
-  CDNNodeWithLatency,
-  CDNNodeSelectorProps,
-  NodeRenderProps,
   LatencyStatus,
-  GitHubCDNOptions,
-  CloudflareCDNOptions,
-  NPMCDNOptions,
-  CDNChunkedDownloadFn,
-  ChunkedDownloadProgress,
-  ChunkedDownloadResult,
-} from './types/cdn';
-
-// ---- Utils ----
-export { CDNTester, defaultCDNTester } from './utils/cdnTester';
-export {
-  CDNManager,
-  createCDNManager,
-  CDN_NODE_TEMPLATES,
-  createGitHubCDNConfig,
-  createCloudflareCDNConfig,
-  createNPMCDNConfig,
-  createMixedCDNConfig,
-} from './utils/cdnManager';
-
-// ---- Chunked Loader ----
-export {
-  ChunkedLoader,
-  defaultChunkedLoader,
-  CDN_NODE_LIMITS,
-} from './utils/chunkedLoader';
-export type {
-  CDNNodeCapability,
-  Chunk,
-  ChunkStatus,
-  ChunkTask,
-  WorkerStats,
-  ChunkedLoadOptions,
+  CDNNode,
+  CDNNodeWithLatency,
+  GitHubContext,
+  ForgeConfig,
+  SplitInfo,
+  SplitChunkInfo,
+  SplitCache,
+  LatencyResult,
   DownloadProgress,
   DownloadResult,
-} from './utils/chunkedLoader';
+  CDNProviderProps,
+  CDNContextValue,
+  CDNNodeSelectorProps,
+  NodeRenderProps,
+  SplitCommandOptions,
+} from './types';
 
-// ---- Context & Hooks ----
+// ---- Core: Config ----
+export { DEFAULTS, normalizeConfig, createForgeConfig } from './core/config';
+
+// ---- Core: CDN Nodes ----
+export {
+  CDN_NODE_PRESETS,
+  DEFAULT_GITHUB_CDN_NODES,
+  createWorkerNode,
+  CDNTester,
+  getSortedNodesWithLatency,
+} from './core/cdnNodes';
+
+// ---- Core: Manifest (info.yaml / .cache.yaml) ----
+export {
+  parseInfoYaml,
+  serializeInfoYaml,
+  parseCacheYaml,
+  serializeCacheYaml,
+} from './core/manifest';
+
+// ---- Core: Fetcher Engine ----
+export { ForgeEngine } from './core/fetcher';
+
+// ---- Core: Chunked Fetcher ----
+export { ChunkedFetcher } from './core/chunkedFetcher';
+export type { ChunkedFetcherOptions, ChunkedFetchResult } from './core/chunkedFetcher';
+
+// ---- React: Context & Hooks ----
 export {
   CDNProvider,
   useCDN,
   useCDNUrl,
-  useCDNStatus,
   useCurrentCDNNode,
-  useCDNChunkedDownload,
-} from './contexts/CDNContext';
+  useCDNStatus,
+  useReqByCDN,
+} from './react/CDNContext';
 
-// ---- Components ----
+// ---- React: Components ----
 export {
   CDNNodeSelector,
   getLatencyText,
   getLatencyClassName,
   REGION_LABELS,
-} from './components/CDNNodeSelector';
+} from './react/CDNNodeSelector';
 
 // ---- Styles ----
 // 用户需手动导入 CSS：
-// import 'hx-cdn-forge/dist/styles.css';
+// import 'hx-cdn-forge/styles.css';

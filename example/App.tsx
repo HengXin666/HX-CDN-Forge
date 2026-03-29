@@ -4,8 +4,10 @@ import {
   CDNNodeSelector,
   useCDN,
   useCDNUrl,
-  createGitHubCDNConfig,
+  useReqByCDN,
+  createForgeConfig,
 } from '../src';
+import type { DownloadProgress } from '../src';
 
 // ============================================================
 // 示例：CDN 图片组件
@@ -138,11 +140,108 @@ function URLDisplay({ path }: { path: string }) {
 }
 
 // ============================================================
+// reqByCDN 演示组件
+// ============================================================
+
+function ReqByCDNDemo() {
+  const reqByCDN = useReqByCDN();
+  const [progress, setProgress] = useState<DownloadProgress | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFetch = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setProgress(null);
+    try {
+      const res = await reqByCDN('/README.md', (p) => setProgress(p));
+      const text = await res.blob.text();
+      setResult(text.slice(0, 500) + (text.length > 500 ? '\n...(truncated)' : ''));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <button
+        onClick={handleFetch}
+        disabled={loading}
+        style={{
+          padding: '8px 20px',
+          borderRadius: '8px',
+          border: '1px solid #3b82f6',
+          background: loading ? '#94a3b8' : '#3b82f6',
+          color: 'white',
+          cursor: loading ? 'wait' : 'pointer',
+          fontSize: '14px',
+          fontWeight: 500,
+        }}
+      >
+        {loading ? 'Downloading...' : 'reqByCDN("/README.md")'}
+      </button>
+
+      {progress && (
+        <div style={{
+          marginTop: '12px',
+          padding: '10px 14px',
+          background: '#f0f9ff',
+          borderRadius: '8px',
+          fontSize: '13px',
+          fontFamily: 'monospace',
+        }}>
+          {progress.percentage.toFixed(1)}%
+          {' | '}
+          {(progress.speed / 1024).toFixed(1)} KB/s
+          {' | '}
+          {progress.loaded}/{progress.total} bytes
+        </div>
+      )}
+
+      {error && (
+        <div style={{
+          marginTop: '12px',
+          padding: '10px 14px',
+          background: '#fef2f2',
+          borderRadius: '8px',
+          color: '#dc2626',
+          fontSize: '13px',
+        }}>
+          Error: {error}
+        </div>
+      )}
+
+      {result && (
+        <pre style={{
+          marginTop: '12px',
+          padding: '14px',
+          background: '#1e293b',
+          color: '#e2e8f0',
+          borderRadius: '10px',
+          fontSize: '12px',
+          lineHeight: 1.5,
+          overflow: 'auto',
+          maxHeight: '300px',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+        }}>
+          {result}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // 主应用
 // ============================================================
 
 function ExampleApp() {
-  const cdnConfig = createGitHubCDNConfig({
+  const cdnConfig = createForgeConfig({
     user: 'facebook',
     repo: 'react',
     ref: 'main',
@@ -170,10 +269,10 @@ function ExampleApp() {
           color: '#1e293b',
           marginBottom: '8px',
         }}>
-          HX-CDN-Forge Demo
+          🔥 HX-CDN-Forge v2 Demo
         </h1>
         <p style={{ color: '#64748b', marginBottom: '32px', fontSize: '15px' }}>
-          CDN smart node selector component.
+          GitHub CDN 代理 — 智能节点选择 + 大文件差分切片 + 多 CDN 并行下载
         </p>
 
         {/* CDN 节点选择器 */}
@@ -223,6 +322,14 @@ function ExampleApp() {
               </div>
             )}
           />
+        </section>
+
+        {/* reqByCDN 透明请求演示 */}
+        <section style={{ marginBottom: '40px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '16px' }}>
+            reqByCDN — 透明请求
+          </h2>
+          <ReqByCDNDemo />
         </section>
 
         {/* 图片加载 */}

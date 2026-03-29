@@ -1,6 +1,6 @@
 /**
- * HX-CDN-Forge 使用示例
- * 展示不同 CDN 配置场景
+ * HX-CDN-Forge v2 使用示例
+ * 展示不同配置场景
  */
 
 import React from 'react';
@@ -10,19 +10,17 @@ import {
   useCDN,
   useCDNUrl,
   useCDNStatus,
-  createGitHubCDNConfig,
-  createCloudflareCDNConfig,
-  createNPMCDNConfig,
-  createMixedCDNConfig,
-  CDN_NODE_TEMPLATES,
+  useReqByCDN,
+  createForgeConfig,
+  createWorkerNode,
 } from '../src';
 
 // ============================================================
-// 示例 1: GitHub 资源加速
+// 示例 1: GitHub 资源加速 (基础)
 // ============================================================
 
-export function GitHubExample() {
-  const config = createGitHubCDNConfig({
+export function GitHubBasicExample() {
+  const config = createForgeConfig({
     user: 'HengXin666',
     repo: 'HX-CDN-Forge',
     ref: 'main',
@@ -31,7 +29,7 @@ export function GitHubExample() {
   return (
     <CDNProvider config={config}>
       <div>
-        <h2>GitHub CDN Example</h2>
+        <h2>GitHub CDN — Basic</h2>
         <CDNNodeSelector />
         <GitHubContent />
       </div>
@@ -45,116 +43,144 @@ function GitHubContent() {
   return (
     <div>
       <h3>Resources</h3>
-      <img
-        src={buildUrl('/screenshots/initial-load.png')}
-        alt="Initial load"
-        style={{ maxWidth: '100%', height: 'auto', borderRadius: '10px' }}
-      />
-      <p>URL: {buildUrl('/screenshots/initial-load.png')}</p>
+      <p>URL: {buildUrl('/README.md')}</p>
     </div>
   );
 }
 
 // ============================================================
-// 示例 2: Cloudflare Workers 代理
+// 示例 2: 带 Tag 版本管理 (推荐)
 // ============================================================
 
-export function CloudflareExample() {
-  const config = createCloudflareCDNConfig({
-    workerDomain: 'your-worker.workers.dev',
-    github: {
+export function TagVersionExample() {
+  // 推荐使用 bot-{commitId}-{timestamp} tag 避免 jsDelivr 缓存问题
+  const config = createForgeConfig({
+    user: 'HengXin666',
+    repo: 'HX-CDN-Forge',
+    ref: 'bot-a1b2c3-20260329',
+  });
+
+  return (
+    <CDNProvider config={config}>
+      <div>
+        <h2>Tag Version (Recommended)</h2>
+        <p>Using bot-tag to avoid jsDelivr cache staleness.</p>
+        <CDNNodeSelector />
+      </div>
+    </CDNProvider>
+  );
+}
+
+// ============================================================
+// 示例 3: 大文件差分切片
+// ============================================================
+
+export function SplitFileExample() {
+  const config = createForgeConfig(
+    {
+      user: 'HengXin666',
+      repo: 'my-assets',
+      ref: 'bot-a1b2c3-20260329',
+    },
+    {
+      splitStoragePath: 'static/cdn-black',
+      mappingPrefix: 'static',
+      splitThreshold: 20 * 1024 * 1024, // 20MB
+    },
+  );
+
+  return (
+    <CDNProvider config={config}>
+      <div>
+        <h2>Split File (Large File Support)</h2>
+        <p>Transparent large file download via reqByCDN()</p>
+        <CDNNodeSelector />
+        <SplitFileContent />
+      </div>
+    </CDNProvider>
+  );
+}
+
+function SplitFileContent() {
+  const reqByCDN = useReqByCDN();
+  const [status, setStatus] = React.useState('idle');
+
+  const handleDownload = async () => {
+    setStatus('downloading...');
+    try {
+      const result = await reqByCDN('static/ass/loli.ass', (p) => {
+        setStatus(`${p.percentage.toFixed(1)}% | ${(p.speed / 1024 / 1024).toFixed(1)} MB/s`);
+      });
+      setStatus(
+        `Done! ${(result.totalSize / 1024 / 1024).toFixed(1)} MB in ${(result.totalTime / 1000).toFixed(1)}s` +
+        ` | Split: ${result.usedSplitMode} | Parallel: ${result.usedParallelMode}`
+      );
+    } catch (err: unknown) {
+      setStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '12px' }}>
+      <button onClick={handleDownload}>Download Large File</button>
+      <p style={{ marginTop: '8px', fontFamily: 'monospace', fontSize: '13px' }}>{status}</p>
+    </div>
+  );
+}
+
+// ============================================================
+// 示例 4: 极速模式 (Turbo)
+// ============================================================
+
+export function TurboModeExample() {
+  const config = createForgeConfig(
+    {
+      user: 'HengXin666',
+      repo: 'my-assets',
+      ref: 'bot-a1b2c3-20260329',
+    },
+    {
+      splitStoragePath: 'static/cdn-black',
+      mappingPrefix: 'static',
+      turboMode: true,          // 启用极速模式
+      turboConcurrentCDNs: 3,   // 同一分片同时从 3 个 CDN 请求
+    },
+  );
+
+  return (
+    <CDNProvider config={config}>
+      <div>
+        <h2>Turbo Mode 🚀</h2>
+        <p>Same chunk races across multiple CDNs simultaneously.</p>
+        <CDNNodeSelector />
+      </div>
+    </CDNProvider>
+  );
+}
+
+// ============================================================
+// 示例 5: Cloudflare Worker 代理节点
+// ============================================================
+
+export function WorkerProxyExample() {
+  const workerNode = createWorkerNode('your-worker.workers.dev');
+
+  const config = createForgeConfig(
+    {
       user: 'HengXin666',
       repo: 'HX-CDN-Forge',
       ref: 'main',
     },
-    extraNodes: [
-      CDN_NODE_TEMPLATES.github.jsd_mirror,
-      CDN_NODE_TEMPLATES.github.zstatic,
-    ],
-  });
-
-  return (
-    <CDNProvider config={config}>
-      <div>
-        <h2>Cloudflare Workers CDN</h2>
-        <p>Free: 100k requests/day. Great for China mainland access.</p>
-        <CDNNodeSelector />
-      </div>
-    </CDNProvider>
-  );
-}
-
-// ============================================================
-// 示例 3: NPM 包资源加速
-// ============================================================
-
-export function NPMExample() {
-  const config = createNPMCDNConfig({
-    package: 'react',
-    version: '18.2.0',
-  });
-
-  return (
-    <CDNProvider config={config}>
-      <div>
-        <h2>NPM CDN</h2>
-        <CDNNodeSelector />
-        <NPMContent />
-      </div>
-    </CDNProvider>
-  );
-}
-
-function NPMContent() {
-  const { buildUrl } = useCDN();
-
-  return (
-    <div>
-      <h3>React UMD</h3>
-      <code style={{ wordBreak: 'break-all', fontSize: '13px' }}>
-        {buildUrl('/umd/react.production.min.js')}
-      </code>
-    </div>
-  );
-}
-
-// ============================================================
-// 示例 4: 混合多种 CDN 源
-// ============================================================
-
-export function MixedExample() {
-  const config = createMixedCDNConfig({
-    nodes: [
-      CDN_NODE_TEMPLATES.github.jsd_mirror,
-      CDN_NODE_TEMPLATES.github.zstatic,
-      CDN_NODE_TEMPLATES.cloudflare.createWorkerNode('your-worker.workers.dev'),
-      CDN_NODE_TEMPLATES.npm.unpkg,
-      {
-        id: 'aliyun-oss',
-        name: 'Aliyun OSS',
-        baseUrl: 'https://your-bucket.oss-cn-beijing.aliyuncs.com',
-        region: 'china',
-        sourceType: 'custom',
-        buildUrl: (baseUrl, resourcePath) => {
-          const path = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
-          return `${baseUrl}${path}`;
-        },
-      },
-    ],
-    context: {
-      githubUser: 'HengXin666',
-      githubRepo: 'HX-CDN-Forge',
-      githubRef: 'main',
-      npmPackage: 'react',
-      npmVersion: '18.2.0',
+    {
+      nodes: [workerNode], // 仅使用自定义 Worker 节点，也可与默认节点混合
     },
-  });
+  );
 
   return (
     <CDNProvider config={config}>
       <div>
-        <h2>Mixed CDN</h2>
-        <p>Supports GitHub, Cloudflare, NPM, and custom CDN sources.</p>
+        <h2>Cloudflare Worker Proxy</h2>
+        <p>Use your own CF Worker as CDN proxy node.</p>
         <CDNNodeSelector />
       </div>
     </CDNProvider>
@@ -162,11 +188,11 @@ export function MixedExample() {
 }
 
 // ============================================================
-// 示例 5: 编程式控制
+// 示例 6: 编程式控制
 // ============================================================
 
 export function ProgrammaticControl() {
-  const config = createGitHubCDNConfig({
+  const config = createForgeConfig({
     user: 'HengXin666',
     repo: 'HX-CDN-Forge',
     ref: 'main',
@@ -232,13 +258,14 @@ function CDNController() {
 }
 
 // ============================================================
-// 示例 6: 自定义渲染 (Render Props)
+// 示例 7: 自定义渲染 (Render Props)
 // ============================================================
 
 export function CustomRenderExample() {
-  const config = createGitHubCDNConfig({
+  const config = createForgeConfig({
     user: 'facebook',
     repo: 'react',
+    ref: 'main',
   });
 
   return (
@@ -285,5 +312,42 @@ export function CustomRenderExample() {
         />
       </div>
     </CDNProvider>
+  );
+}
+
+// ============================================================
+// 示例 8: useCDNUrl 直接构建 URL
+// ============================================================
+
+export function DirectUrlExample() {
+  const config = createForgeConfig({
+    user: 'facebook',
+    repo: 'react',
+    ref: 'main',
+  });
+
+  return (
+    <CDNProvider config={config}>
+      <DirectUrlContent />
+    </CDNProvider>
+  );
+}
+
+function DirectUrlContent() {
+  const readmeUrl = useCDNUrl('/README.md');
+  const packageUrl = useCDNUrl('/package.json');
+
+  return (
+    <div>
+      <h2>Direct URL Building</h2>
+      <ul style={{ listStyle: 'none', padding: 0, fontFamily: 'monospace', fontSize: '13px' }}>
+        <li style={{ padding: '6px 0', wordBreak: 'break-all' }}>
+          <strong>README.md:</strong> {readmeUrl || '(initializing...)'}
+        </li>
+        <li style={{ padding: '6px 0', wordBreak: 'break-all' }}>
+          <strong>package.json:</strong> {packageUrl || '(initializing...)'}
+        </li>
+      </ul>
+    </div>
   );
 }

@@ -50,5 +50,13 @@ logs/
 # TypeScript
 *.tsbuildinfo
 
-# Screenshots (keep them for documentation)
-# screenshots/
+# Screenshots
+screenshots/
+
+# Dev artifacts
+dev-output.txt
+market-research.md
+research_report_free_cdn_china_friendly.md
+
+# Workbuddy local settings
+.workbuddy/

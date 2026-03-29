@@ -1,13 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import type {
-  CDNNodeWithLatency,
-  CDNNodeSelectorProps,
-} from '../../types/cdn';
-import { useCDN } from '../../contexts/CDNContext';
+import type { CDNNodeWithLatency, CDNNodeSelectorProps } from '../../types';
+import { useCDN } from '../CDNContext';
 import './styles.css';
 
 // ============================================================
-// SVG Icons (内联，零依赖)
+// SVG Icons
 // ============================================================
 
 const ChevronDownIcon = () => (
@@ -26,20 +23,20 @@ const RefreshIcon = () => (
 // Helpers
 // ============================================================
 
-const REGION_LABELS: Record<string, string> = {
+export const REGION_LABELS: Record<string, string> = {
   china: '中国大陆',
   asia: '亚太',
   global: '全球',
 };
 
-function getLatencyText(node: CDNNodeWithLatency): string {
+export function getLatencyText(node: CDNNodeWithLatency): string {
   if (node.latencyStatus === 'testing') return '测速中';
   if (node.latencyStatus === 'failed' || (node.latency !== undefined && node.latency < 0)) return '失败';
   if (node.latencyStatus === 'idle' || node.latency === undefined) return '--';
   return `${Math.round(node.latency)}ms`;
 }
 
-function getLatencyClassName(node: CDNNodeWithLatency): string {
+export function getLatencyClassName(node: CDNNodeWithLatency): string {
   if (node.latencyStatus === 'testing') return 'latency-testing';
   if (node.latencyStatus === 'failed' || (node.latency !== undefined && node.latency < 0)) return 'latency-failed';
   if (node.latencyStatus === 'idle' || node.latency === undefined) return 'latency-idle';
@@ -53,26 +50,6 @@ function getLatencyClassName(node: CDNNodeWithLatency): string {
 // Component
 // ============================================================
 
-/**
- * CDN 节点选择器组件
- *
- * 功能：延迟测速 / 节点列表 / 智能排序 / 暗色模式 / 完全可自定义
- *
- * @example
- * ```tsx
- * // 基本用法
- * <CDNNodeSelector />
- *
- * // 自定义节点渲染
- * <CDNNodeSelector
- *   renderNode={({ node, isSelected, latencyText, onSelect }) => (
- *     <div onClick={onSelect} style={{ fontWeight: isSelected ? 'bold' : 'normal' }}>
- *       {node.name} - {latencyText}
- *     </div>
- *   )}
- * />
- * ```
- */
 export function CDNNodeSelector({
   className = '',
   style,
@@ -89,13 +66,10 @@ export function CDNNodeSelector({
   renderEmpty,
   renderLoading,
 }: CDNNodeSelectorProps): React.ReactElement {
-  const {
-    currentNode,
-    nodes,
-    isTesting,
-    selectNode,
-    testAllNodes,
-  } = useCDN();
+  const { currentNode, nodes, isTesting, isInitialized, selectNode, testAllNodes } = useCDN();
+
+  // 是否处于初始化自动选择阶段 (还没完成第一次测速)
+  const isAutoSelecting = isTesting && !isInitialized;
 
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -103,25 +77,21 @@ export function CDNNodeSelector({
   // 点击外部关闭
   useEffect(() => {
     if (!isOpen) return;
-
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  // 键盘关闭
+  // ESC 关闭
   useEffect(() => {
     if (!isOpen) return;
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setIsOpen(false);
     };
-
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
@@ -131,9 +101,7 @@ export function CDNNodeSelector({
       if (disabled) return;
       selectNode(nodeId);
       const node = nodes.find((n) => n.id === nodeId);
-      if (node) {
-        onChange?.(node);
-      }
+      if (node) onChange?.(node);
       setIsOpen(false);
     },
     [disabled, selectNode, nodes, onChange],
@@ -149,9 +117,8 @@ export function CDNNodeSelector({
     if (!disabled) setIsOpen((prev) => !prev);
   }, [disabled]);
 
-  // 当前节点的延迟信息
   const currentNodeWithLatency = currentNode
-    ? nodes.find((n) => n.id === currentNode.id) || { ...currentNode, latencyStatus: 'idle' as const }
+    ? nodes.find((n) => n.id === currentNode.id) ?? { ...currentNode, latencyStatus: 'idle' as const }
     : null;
 
   const rootClassName = [
@@ -163,16 +130,14 @@ export function CDNNodeSelector({
   return (
     <div className={rootClassName} style={style} ref={containerRef}>
       {title && <div className="cdn-selector-title">{title}</div>}
-
       <div className="cdn-selector-container">
-        {/* ---- Trigger ---- */}
         {renderTrigger ? (
           <div onClick={toggleOpen} style={{ flex: 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
             {renderTrigger({ currentNode, isOpen, isTesting })}
           </div>
         ) : (
           <button
-            className="cdn-current-node"
+            className={`cdn-current-node${isAutoSelecting ? ' cdn-auto-selecting' : ''}`}
             onClick={toggleOpen}
             disabled={disabled}
             type="button"
@@ -180,19 +145,31 @@ export function CDNNodeSelector({
             aria-expanded={isOpen}
           >
             <div className="cdn-node-info">
-              <span className="cdn-node-name">
-                {currentNode?.name || '未选择节点'}
-              </span>
-              {showRegion && currentNode?.region && (
-                <span className="cdn-node-region">
-                  {REGION_LABELS[currentNode.region] || currentNode.region}
-                </span>
+              {isAutoSelecting ? (
+                <>
+                  <span className="cdn-node-name cdn-auto-selecting-text">自动选择中…</span>
+                  <span className="cdn-node-region" style={{ fontSize: '11px' }}>
+                    正在测速，使用临时节点: {currentNode?.name ?? '—'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="cdn-node-name">{currentNode?.name ?? '未选择节点'}</span>
+                  {showRegion && currentNode?.region && (
+                    <span className="cdn-node-region">
+                      {REGION_LABELS[currentNode.region] ?? currentNode.region}
+                    </span>
+                  )}
+                </>
               )}
             </div>
-            {showLatency && currentNodeWithLatency && (
+            {!isAutoSelecting && showLatency && currentNodeWithLatency && (
               <span className={`cdn-latency ${getLatencyClassName(currentNodeWithLatency as CDNNodeWithLatency)}`}>
                 {getLatencyText(currentNodeWithLatency as CDNNodeWithLatency)}
               </span>
+            )}
+            {isAutoSelecting && (
+              <span className="cdn-latency latency-testing">测速中</span>
             )}
             <span className={`cdn-selector-arrow ${isOpen ? 'cdn-arrow-open' : ''}`}>
               <ChevronDownIcon />
@@ -200,7 +177,6 @@ export function CDNNodeSelector({
           </button>
         )}
 
-        {/* ---- Refresh ---- */}
         {showRefreshButton && (
           <button
             className={`cdn-refresh-button ${isTesting ? 'cdn-refreshing' : ''}`}
@@ -214,7 +190,6 @@ export function CDNNodeSelector({
           </button>
         )}
 
-        {/* ---- Dropdown ---- */}
         {isOpen && (
           <div className="cdn-node-list" role="listbox">
             {nodes.length === 0 ? (
@@ -259,7 +234,7 @@ export function CDNNodeSelector({
                       <span className="cdn-node-name">{node.name}</span>
                       {showRegion && node.region && (
                         <span className="cdn-node-region">
-                          {REGION_LABELS[node.region] || node.region}
+                          {REGION_LABELS[node.region] ?? node.region}
                         </span>
                       )}
                       {node.description && (
@@ -267,9 +242,7 @@ export function CDNNodeSelector({
                       )}
                     </div>
                     {showLatency && (
-                      <span className={`cdn-latency ${latencyClass}`}>
-                        {latencyText}
-                      </span>
+                      <span className={`cdn-latency ${latencyClass}`}>{latencyText}</span>
                     )}
                   </button>
                 );
@@ -283,9 +256,3 @@ export function CDNNodeSelector({
 }
 
 export default CDNNodeSelector;
-
-// ============================================================
-// 导出 Helper 函数供自定义渲染使用
-// ============================================================
-
-export { getLatencyText, getLatencyClassName, REGION_LABELS };

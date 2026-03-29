@@ -316,6 +316,23 @@
   50% { opacity: 0.4; }
 }
 
+/* ---- Auto Selecting State ---- */
+.cdn-current-node.cdn-auto-selecting {
+  border-color: var(--cdn-accent);
+  border-style: dashed;
+  animation: cdn-auto-selecting-border 1.5s ease-in-out infinite;
+}
+
+@keyframes cdn-auto-selecting-border {
+  0%, 100% { border-color: var(--cdn-accent); }
+  50% { border-color: var(--cdn-border); }
+}
+
+.cdn-auto-selecting-text {
+  color: var(--cdn-accent) !important;
+  animation: cdn-pulse 1.2s ease-in-out infinite;
+}
+
 /* ---- Arrow ---- */
 .cdn-selector-arrow {
   display: inline-flex;
