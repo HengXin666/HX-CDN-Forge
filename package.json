@@ -1,6 +1,6 @@
 {
   "name": "hx-cdn-forge",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "GitHub CDN proxy with transparent large-file splitting, multi-CDN parallel download, and turbo mode",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -42,12 +42,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HX-UserName/hx-cdn-forge"
+    "url": "https://github.com/HengXin666/HX-CDN-Forge"
   },
   "bugs": {
-    "url": "https://github.com/HX-UserName/hx-cdn-forge/issues"
+    "url": "https://github.com/HengXin666/HX-CDN-Forge/issues"
   },
-  "homepage": "https://github.com/HX-UserName/hx-cdn-forge#readme",
+  "homepage": "https://github.com/HengXin666/HX-CDN-Forge#readme",
   "scripts": {
     "build": "tsup",
     "dev": "vite",
