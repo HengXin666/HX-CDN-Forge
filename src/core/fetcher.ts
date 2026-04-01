@@ -23,6 +23,7 @@ import { normalizeConfig } from './config';
 import { CDNTester, getSortedNodesWithLatency } from './cdnNodes';
 import { parseInfoYaml } from './manifest';
 import { ChunkedFetcher } from './chunkedFetcher';
+import { RangeDownloader } from './rangeDownloader';
 
 // ============================================================
 // ForgeEngine — 核心引擎 (独立于 React，可在任何环境使用)
@@ -32,6 +33,7 @@ export class ForgeEngine {
   private config: Required<ForgeConfig>;
   private tester: CDNTester;
   private fetcher: ChunkedFetcher;
+  private rangeDownloader: RangeDownloader;
   private currentNodeId: string | null = null;
   private latencyResults: Map<string, LatencyResult> = new Map();
   private initialized = false;
@@ -56,6 +58,10 @@ export class ForgeEngine {
       enableWorkStealing: this.config.enableWorkStealing,
       turboMode: this.config.turboMode,
       turboConcurrentCDNs: this.config.turboConcurrentCDNs,
+    });
+    this.rangeDownloader = new RangeDownloader({
+      segmentTimeout: this.config.chunkTimeout * 3,
+      maxRetries: this.config.maxRetries,
     });
 
     // 初始化就绪 Promise
@@ -232,6 +238,73 @@ export class ForgeEngine {
     return this.downloadDirect(filePath, startTime, onProgress);
   }
 
+  /**
+   * 多 CDN 竞速下载 — 同一文件从所有可用节点同时请求, 最快的赢
+   *
+   * 适用场景: 非切片中小文件 (字体、配置等), 对延迟敏感
+   * - 所有可用 CDN 节点同时 fetch, Promise.any 取第一个成功
+   * - 其余请求立即 abort, 不浪费后续带宽
+   * - 如果只有 1 个节点, 退化为普通 reqByCDN
+   * - 有切片版本的文件仍走 reqByCDN 的切片并行逻辑
+   *
+   * @param filePath - GitHub 仓库中相对于根目录的文件路径
+   * @param onProgress - 进度回调 (仅在退化到单节点时生效)
+   */
+  async reqByCDNRace(
+    filePath: string,
+    onProgress?: (p: DownloadProgress) => void,
+  ): Promise<DownloadResult> {
+    const startTime = performance.now();
+
+    if (!this.initialized) await this.waitReady();
+
+    // 先检查是否有切片版本 — 有的话走切片并行 (比竞速更高效)
+    const splitInfo = await this.tryGetSplitInfo(filePath);
+    if (splitInfo) {
+      return this.downloadSplit(filePath, splitInfo, startTime, onProgress);
+    }
+
+    // 无切片 → 多 CDN 竞速
+    const enabledNodes = this.config.nodes.filter((n) => n.enabled !== false);
+    if (enabledNodes.length <= 1) {
+      return this.downloadDirect(filePath, startTime, onProgress);
+    }
+
+    return this.downloadRace(filePath, enabledNodes, startTime);
+  }
+
+  /**
+   * IDM 模式下载 — HTTP Range 多节点分段并行 + 动态任务劈半窃取
+   *
+   * 适用场景: 中大文件 (字体、音频等)，利用所有节点的带宽
+   * - 将文件等分给 N 个节点, 每个用 Range 请求下载自己的段
+   * - 某节点完成后, 找当前最大的未完成段, 从中间劈半:
+   *   原节点保留前半段 (与已下载部分连续), 空闲节点接管后半段
+   * - 有切片版本的文件仍走 reqByCDN 的切片并行逻辑
+   * - Content-Length 未知或文件太小时退化为单连接
+   *
+   * @param filePath - GitHub 仓库中相对于根目录的文件路径
+   * @param onProgress - 进度回调
+   */
+  async reqByCDNRange(
+    filePath: string,
+    onProgress?: (p: DownloadProgress) => void,
+  ): Promise<DownloadResult> {
+    const startTime = performance.now();
+
+    if (!this.initialized) await this.waitReady();
+
+    // 先检查切片 — 有的话走切片并行 (已预处理, 更高效)
+    const splitInfo = await this.tryGetSplitInfo(filePath);
+    if (splitInfo) {
+      return this.downloadSplit(filePath, splitInfo, startTime, onProgress);
+    }
+
+    // 无切片 → IDM 模式 Range 分段下载
+    const enabledNodes = this.config.nodes.filter((n) => n.enabled !== false);
+    return this.rangeDownloader.download(enabledNodes, this.config.github, filePath, onProgress);
+  }
+
   // ============================================================
   // 私有: 分片下载
   // ============================================================
@@ -385,6 +458,56 @@ export class ForgeEngine {
     } catch (err) {
       clearTimeout(tid);
       throw err;
+    }
+  }
+
+  /** 多 CDN 竞速下载 (非切片文件) */
+  private async downloadRace(
+    filePath: string,
+    nodes: CDNNode[],
+    startTime: number,
+  ): Promise<DownloadResult> {
+    const controllers: AbortController[] = [];
+    const timeout = this.config.chunkTimeout * 3;
+
+    const promises = nodes.map(async (node) => {
+      const ctrl = new AbortController();
+      controllers.push(ctrl);
+      const url = node.buildUrl(this.config.github, filePath);
+      const tid = setTimeout(() => ctrl.abort(), timeout);
+
+      try {
+        const resp = await fetch(url, { mode: 'cors', signal: ctrl.signal });
+        clearTimeout(tid);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+        const blob = await resp.blob();
+        const contentType = resp.headers.get('Content-Type') ?? 'application/octet-stream';
+
+        return {
+          blob,
+          arrayBuffer: () => blob.arrayBuffer(),
+          totalSize: blob.size,
+          totalTime: performance.now() - startTime,
+          contentType,
+          usedSplitMode: false,
+          usedParallelMode: false,
+          nodeContributions: new Map([[node.id, { bytes: blob.size, chunks: 1, avgSpeed: 0 }]]),
+        } as DownloadResult;
+      } catch (err) {
+        clearTimeout(tid);
+        throw err;
+      }
+    });
+
+    try {
+      const result = await Promise.any(promises);
+      // 取消所有其他请求
+      for (const ctrl of controllers) {
+        try { ctrl.abort(); } catch { /* ignore */ }
+      }
+      return result;
+    } catch {
+      throw new Error(`All ${nodes.length} CDN nodes failed for: ${filePath}`);
     }
   }
 

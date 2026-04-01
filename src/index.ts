@@ -50,6 +50,10 @@ export { ForgeEngine } from './core/fetcher';
 export { ChunkedFetcher } from './core/chunkedFetcher';
 export type { ChunkedFetcherOptions, ChunkedFetchResult } from './core/chunkedFetcher';
 
+// ---- Core: Range Downloader (IDM mode) ----
+export { RangeDownloader } from './core/rangeDownloader';
+export type { RangeDownloaderOptions } from './core/rangeDownloader';
+
 // ---- React: Context & Hooks ----
 export {
   CDNProvider,
