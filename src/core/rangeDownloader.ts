@@ -172,7 +172,7 @@ export class RangeDownloader {
       const ctrl = new AbortController();
       seg.controller = ctrl;
       seg.status = 'downloading';
-      seg.lastProgressAt = performance.now();
+      seg.lastProgressAt = 0;  // 0 表示还在连接中, 停滞检测会跳过
 
       const tid = setTimeout(() => ctrl.abort(), this.opts.segmentTimeout);
 
@@ -190,6 +190,9 @@ export class RangeDownloader {
         if (resp.status === 200 && seg.start > 0) {
           throw new Error('Server returned 200 instead of 206 — Range not supported');
         }
+
+        // 响应到达, 从现在开始计时停滞检测
+        seg.lastProgressAt = performance.now();
 
         // 流式读取
         if (resp.body) {
@@ -264,6 +267,7 @@ export class RangeDownloader {
       const now = performance.now();
       for (const seg of segments) {
         if (seg.status !== 'downloading') continue;
+        if (seg.lastProgressAt === 0) continue;  // 还在连接/握手中, 由 fetch 的 segmentTimeout 兜底
         const stalled = now - seg.lastProgressAt;
         if (stalled > this.opts.stallTimeout) {
           console.warn(`[RangeDownloader] 节点 ${seg.nodeId} 停滞 ${(stalled / 1000).toFixed(1)}s, abort + 拉黑`);

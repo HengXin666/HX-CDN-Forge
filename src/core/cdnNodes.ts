@@ -96,7 +96,7 @@ export const CDN_NODE_PRESETS = {
     region: 'global' as const,
     buildUrl: buildGithubRawUrl,
     maxFileSize: 100 * 1024 * 1024,
-    supportsRange: true,
+    supportsRange: false,  // CORS preflight 对 Range 请求返回 403
     description: 'GitHub 原始文件服务',
   },
 } satisfies Record<string, CDNNode>;
