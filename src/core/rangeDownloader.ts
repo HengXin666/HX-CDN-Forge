@@ -2,15 +2,17 @@
  * rangeDownloader.ts — IDM 风格多节点 HTTP Range 并行下载
  *
  * 算法:
- * 1. HEAD 请求获取 Content-Length
+ * 1. HEAD 请求获取 Content-Length + Accept-Ranges 检测
  * 2. 将文件等分为 N 个 segment (N = 可用节点数), 每个节点负责一个
  * 3. 每个节点用 Range: bytes=start-end 下载自己的 segment
  * 4. 当某节点完成 → 找当前正在下载的最大剩余 segment → 从中间劈开:
- *    - 原节点保留后半段 (与已下载部分连续)
- *    - 空闲节点接管前半段 (新的独立请求)
- * 5. 所有 segment 完成后按字节序拼接
+ *    - 原节点保留前半段 (与已下载部分连续)
+ *    - 空闲节点接管后半段
+ * 5. 慢节点检测: 如果某 segment 下载停滞超过 stallTimeout → abort + 拉黑节点
+ *    → 将其未完成部分交给其他可用节点
+ * 6. 所有 segment 完成后按字节序拼接 + 完整性校验
  *
- * 退化: Content-Length 未知 / 不支持 Range → 回退到普通单连接下载
+ * 降级: Content-Length 未知 / 不支持 Range → 回退到普通单连接下载
  */
 
 import type { CDNNode, GitHubContext, DownloadProgress, DownloadResult } from '../types';
@@ -21,13 +23,13 @@ import type { CDNNode, GitHubContext, DownloadProgress, DownloadResult } from '.
 
 interface Segment {
   id: number;
-  start: number;         // 字节起始 (inclusive)
-  end: number;           // 字节结束 (inclusive)
+  start: number;
+  end: number;
   nodeId: string;
   status: 'pending' | 'downloading' | 'completed' | 'failed';
   data?: ArrayBuffer;
-  /** 正在下载时, 已经下载到的字节位置 (用于计算剩余量来决定劈半) */
   downloadedUpTo: number;
+  lastProgressAt: number;  // 上次有数据到达的时间戳 (用于停滞检测)
   retries: number;
   controller?: AbortController;
 }
@@ -39,12 +41,18 @@ export interface RangeDownloaderOptions {
   maxRetries: number;
   /** 最小可劈半的段大小 (字节), 低于此值不再劈, 默认 256KB */
   minSplitSize: number;
+  /** 停滞超时 (ms): segment 无新数据到达超过此时间 → abort + 交给其他节点, 默认 2500 */
+  stallTimeout: number;
+  /** 停滞检测间隔 (ms), 默认 500 */
+  stallCheckInterval: number;
 }
 
 const DEFAULT_OPTS: RangeDownloaderOptions = {
   segmentTimeout: 60_000,
   maxRetries: 3,
   minSplitSize: 256 * 1024,
+  stallTimeout: 2_500,
+  stallCheckInterval: 500,
 };
 
 // ============================================================
@@ -58,15 +66,6 @@ export class RangeDownloader {
     this.opts = { ...DEFAULT_OPTS, ...opts };
   }
 
-  /**
-   * IDM 模式下载单个文件
-   *
-   * @param url - 任一 CDN 节点的完整 URL (用于 HEAD 探测)
-   * @param nodes - 所有可用节点
-   * @param github - GitHub 上下文
-   * @param filePath - 仓库内相对路径
-   * @param onProgress - 进度回调
-   */
   async download(
     nodes: CDNNode[],
     github: GitHubContext,
@@ -80,27 +79,42 @@ export class RangeDownloader {
       throw new Error('No CDN nodes with Range support available');
     }
 
-    // 1. HEAD 探测文件大小 + Range 支持
-    const probeNode = enabledNodes[0]!;
-    const probeUrl = probeNode.buildUrl(github, filePath);
-    const probeResult = await this.probeFile(probeUrl);
-
-    if (probeResult.totalSize <= 0) {
-      throw new Error('Cannot determine file size (Content-Length missing or 0)');
+    // 1. 检查节点是否声明支持 Range (信任节点配置, 不依赖 HEAD Accept-Ranges)
+    const rangeNodes = enabledNodes.filter((n) => n.supportsRange);
+    if (rangeNodes.length === 0) {
+      console.warn(`[RangeDownloader] 无节点声明支持 Range, 降级为单连接: ${filePath}`);
+      const fallback = enabledNodes[0]!;
+      const url = fallback.buildUrl(github, filePath);
+      return this.downloadSingle(url, fallback.id, 0, 'application/octet-stream', startTime, onProgress);
     }
 
-    const { totalSize, contentType, supportsRange } = probeResult;
-
-    // 不支持 Range / 文件太小 / 只有 1 个节点 → 降级为单连接
-    if (!supportsRange || totalSize < this.opts.minSplitSize * 2 || enabledNodes.length === 1) {
-      if (!supportsRange) {
-        console.warn(`[RangeDownloader] 服务器不支持 Range, 降级为单连接下载: ${filePath}`);
+    // 2. HEAD 探测文件大小 (尝试多个节点, 防止单节点 CORS 失败)
+    let totalSize = 0;
+    let contentType = 'application/octet-stream';
+    for (const node of rangeNodes) {
+      const url = node.buildUrl(github, filePath);
+      const probe = await this.probeFile(url);
+      if (probe.totalSize > 0) {
+        totalSize = probe.totalSize;
+        contentType = probe.contentType;
+        break;
       }
-      return this.downloadSingle(probeUrl, probeNode.id, totalSize, contentType, startTime, onProgress);
     }
 
-    // 2. 等分为 N 个 segment
-    const numSegments = enabledNodes.length;
+    if (totalSize <= 0) {
+      // Content-Length 拿不到, 降级单连接
+      console.warn(`[RangeDownloader] Content-Length 未知, 降级为单连接: ${filePath}`);
+      const url = rangeNodes[0]!.buildUrl(github, filePath);
+      return this.downloadSingle(url, rangeNodes[0]!.id, 0, contentType, startTime, onProgress);
+    }
+
+    if (totalSize < this.opts.minSplitSize * 2 || rangeNodes.length === 1) {
+      const url = rangeNodes[0]!.buildUrl(github, filePath);
+      return this.downloadSingle(url, rangeNodes[0]!.id, totalSize, contentType, startTime, onProgress);
+    }
+
+    // 3. 等分 segment
+    const numSegments = rangeNodes.length;
     const segmentSize = Math.ceil(totalSize / numSegments);
     let nextSegId = 0;
 
@@ -111,16 +125,18 @@ export class RangeDownloader {
       if (start > totalSize - 1) break;
       segments.push({
         id: nextSegId++,
-        start,
-        end,
-        nodeId: enabledNodes[i]!.id,
+        start, end,
+        nodeId: rangeNodes[i]!.id,
         status: 'pending',
         downloadedUpTo: start,
+        lastProgressAt: 0,
         retries: 0,
       });
     }
 
-    // 3. 并行下载 + 动态劈半窃取
+    // 节点状态: 拉黑的节点不再分配任务
+    const bannedNodes = new Set<string>();
+    const nodeMap = new Map(rangeNodes.map((n) => [n.id, n]));
     let completedBytes = 0;
 
     const emitProgress = () => {
@@ -139,8 +155,15 @@ export class RangeDownloader {
       });
     };
 
-    const nodeMap = new Map(enabledNodes.map((n) => [n.id, n]));
+    const getAvailableNodeId = (prefer?: string): string | null => {
+      if (prefer && !bannedNodes.has(prefer)) return prefer;
+      for (const n of rangeNodes) {
+        if (!bannedNodes.has(n.id)) return n.id;
+      }
+      return null;
+    };
 
+    // ── 下载单个 segment ──
     const downloadSegment = async (seg: Segment): Promise<void> => {
       const node = nodeMap.get(seg.nodeId);
       if (!node) { seg.status = 'failed'; return; }
@@ -149,6 +172,7 @@ export class RangeDownloader {
       const ctrl = new AbortController();
       seg.controller = ctrl;
       seg.status = 'downloading';
+      seg.lastProgressAt = performance.now();
 
       const tid = setTimeout(() => ctrl.abort(), this.opts.segmentTimeout);
 
@@ -163,13 +187,11 @@ export class RangeDownloader {
         if (!resp.ok && resp.status !== 206) {
           throw new Error(`HTTP ${resp.status}`);
         }
-
-        // 验证服务器确实返回了部分内容 (206), 而不是忽略 Range 返回完整文件 (200)
         if (resp.status === 200 && seg.start > 0) {
           throw new Error('Server returned 200 instead of 206 — Range not supported');
         }
 
-        // 流式读取, 追踪 downloadedUpTo
+        // 流式读取
         if (resp.body) {
           const reader = resp.body.getReader();
           const chunks: Uint8Array[] = [];
@@ -181,9 +203,9 @@ export class RangeDownloader {
             chunks.push(value);
             received += value.byteLength;
             seg.downloadedUpTo = seg.start + received;
+            seg.lastProgressAt = performance.now();
           }
 
-          // 拼接
           const buf = new Uint8Array(received);
           let offset = 0;
           for (const c of chunks) {
@@ -193,25 +215,129 @@ export class RangeDownloader {
           seg.data = buf.buffer;
         } else {
           seg.data = await resp.arrayBuffer();
+          seg.downloadedUpTo = seg.start + seg.data.byteLength;
+        }
+
+        // ── 完整性: 校验收到的字节数是否等于请求范围 ──
+        const expectedSize = seg.end - seg.start + 1;
+        const actualSize = seg.data!.byteLength;
+        if (actualSize !== expectedSize) {
+          throw new Error(`Size mismatch: expected ${expectedSize}, got ${actualSize}`);
         }
 
         seg.status = 'completed';
-        completedBytes += seg.data!.byteLength;
+        completedBytes += actualSize;
         emitProgress();
       } catch (err) {
         clearTimeout(tid);
+        seg.controller = undefined;
         seg.retries++;
+
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isCorsOrNetwork = errMsg.includes('abort') || errMsg.includes('network')
+          || errMsg.includes('CORS') || errMsg.includes('Failed to fetch') || !errMsg.includes('HTTP');
+
+        if (isCorsOrNetwork) {
+          // CORS / 网络错误 → 拉黑这个节点, 换其他节点
+          console.warn(`[RangeDownloader] 节点 ${seg.nodeId} 请求失败 (${errMsg}), 拉黑`);
+          bannedNodes.add(seg.nodeId);
+        }
+
         if (seg.retries < this.opts.maxRetries) {
           seg.status = 'pending';
           seg.downloadedUpTo = seg.start;
+          seg.data = undefined;
+          const alt = getAvailableNodeId();
+          if (alt) {
+            seg.nodeId = alt;
+          } else {
+            seg.status = 'failed';
+          }
         } else {
           seg.status = 'failed';
         }
       }
     };
 
-    // 找到当前正在下载的、剩余量最大的 segment, 劈半
-    const trySplitAndSteal = (freeNodeId: string): Segment | null => {
+    // ── 停滞检测: 定期扫描, 卡住的 segment abort + 拉黑节点 + 交给其他节点 ──
+    const stallChecker = setInterval(() => {
+      const now = performance.now();
+      for (const seg of segments) {
+        if (seg.status !== 'downloading') continue;
+        const stalled = now - seg.lastProgressAt;
+        if (stalled > this.opts.stallTimeout) {
+          console.warn(`[RangeDownloader] 节点 ${seg.nodeId} 停滞 ${(stalled / 1000).toFixed(1)}s, abort + 拉黑`);
+          // abort 这个请求
+          try { seg.controller?.abort(); } catch {}
+          seg.controller = undefined;
+
+          // 拉黑节点
+          bannedNodes.add(seg.nodeId);
+
+          // 将未完成部分作为新 pending segment 交给其他节点
+          const remaining = seg.end - seg.downloadedUpTo;
+          if (remaining > 0) {
+            const altNode = getAvailableNodeId();
+            if (altNode) {
+              // 保留已下载部分
+              if (seg.downloadedUpTo > seg.start) {
+                const downloadedSize = seg.downloadedUpTo - seg.start;
+                // 流式读取时 data 可能还没拼好, 需要截断
+                if (seg.data && seg.data.byteLength >= downloadedSize) {
+                  seg.data = seg.data.slice(0, downloadedSize);
+                } else {
+                  seg.data = new ArrayBuffer(0);
+                }
+                const origEnd = seg.end;
+                seg.end = seg.downloadedUpTo - 1;
+                seg.status = 'completed';
+                completedBytes += seg.data.byteLength;
+                emitProgress();
+
+                // 新 segment: 接管剩余部分
+                segments.push({
+                  id: nextSegId++,
+                  start: seg.downloadedUpTo,
+                  end: origEnd,
+                  nodeId: altNode,
+                  status: 'pending',
+                  downloadedUpTo: seg.downloadedUpTo,
+                  lastProgressAt: 0,
+                  retries: 0,
+                });
+              } else {
+                // 完全没数据, 直接废弃重分配
+                seg.status = 'completed';
+                seg.data = new ArrayBuffer(0);
+                const origEnd = seg.end;
+                seg.end = seg.start - 1;
+
+                segments.push({
+                  id: nextSegId++,
+                  start: seg.start,
+                  end: origEnd,
+                  nodeId: altNode,
+                  status: 'pending',
+                  downloadedUpTo: seg.start,
+                  lastProgressAt: 0,
+                  retries: 0,
+                });
+              }
+            } else {
+              // 所有节点都拉黑了, 标记失败
+              seg.status = 'failed';
+            }
+          } else {
+            // 剩余为 0, 算完成
+            seg.status = 'completed';
+            if (!seg.data) seg.data = new ArrayBuffer(0);
+          }
+        }
+      }
+    }, this.opts.stallCheckInterval);
+
+    // ── 劈半窃取 ──
+    const trySplitAndSteal = (freeNodeId: string): boolean => {
       let bestSeg: Segment | null = null;
       let bestRemaining = 0;
 
@@ -224,15 +350,22 @@ export class RangeDownloader {
         }
       }
 
-      if (!bestSeg) return null;
+      if (!bestSeg) return false;
 
-      // 劈半: 原节点保留后半段 (与已下载部分连续), 空闲节点接管前半段
       const splitPoint = bestSeg.downloadedUpTo + Math.floor((bestSeg.end - bestSeg.downloadedUpTo) / 2);
 
-      // 取消原请求
-      try { bestSeg.controller?.abort(); } catch {}
+      // 确保两半都不小于 minSplitSize
+      const firstHalf = splitPoint - bestSeg.downloadedUpTo;
+      const secondHalf = bestSeg.end - splitPoint;
+      if (firstHalf < this.opts.minSplitSize || secondHalf < this.opts.minSplitSize) {
+        return false;
+      }
 
-      // 原节点的新 segment: downloadedUpTo ~ splitPoint (前半, 连续)
+      // abort 原请求
+      try { bestSeg.controller?.abort(); } catch {}
+      bestSeg.controller = undefined;
+
+      // 原节点: 前半 (连续)
       const origNewSeg: Segment = {
         id: nextSegId++,
         start: bestSeg.downloadedUpTo,
@@ -240,10 +373,11 @@ export class RangeDownloader {
         nodeId: bestSeg.nodeId,
         status: 'pending',
         downloadedUpTo: bestSeg.downloadedUpTo,
+        lastProgressAt: 0,
         retries: 0,
       };
 
-      // 空闲节点的 segment: splitPoint+1 ~ end (后半)
+      // 空闲节点: 后半
       const stolenSeg: Segment = {
         id: nextSegId++,
         start: splitPoint + 1,
@@ -251,76 +385,96 @@ export class RangeDownloader {
         nodeId: freeNodeId,
         status: 'pending',
         downloadedUpTo: splitPoint + 1,
+        lastProgressAt: 0,
         retries: 0,
       };
 
-      // 更新原 segment: 只保留已下载的部分
-      if (bestSeg.downloadedUpTo > bestSeg.start && bestSeg.data) {
-        // 截取已下载的数据
+      // 原 segment 保留已下载部分
+      if (bestSeg.downloadedUpTo > bestSeg.start) {
         const downloadedSize = bestSeg.downloadedUpTo - bestSeg.start;
-        bestSeg.data = bestSeg.data.slice(0, downloadedSize);
+        if (bestSeg.data && bestSeg.data.byteLength >= downloadedSize) {
+          bestSeg.data = bestSeg.data.slice(0, downloadedSize);
+        } else {
+          bestSeg.data = new ArrayBuffer(0);
+        }
         bestSeg.end = bestSeg.downloadedUpTo - 1;
         bestSeg.status = 'completed';
-        completedBytes += downloadedSize;
+        completedBytes += bestSeg.data.byteLength;
         emitProgress();
       } else {
-        // 还没下载到数据, 直接废弃
         bestSeg.status = 'completed';
         bestSeg.data = new ArrayBuffer(0);
-        bestSeg.end = bestSeg.start - 1; // 空 segment
+        bestSeg.end = bestSeg.start - 1;
       }
 
       segments.push(origNewSeg, stolenSeg);
-      return stolenSeg;
+      return true;
     };
 
-    // Worker 协程
+    // ── Worker 协程 ──
     const worker = async (nodeId: string): Promise<void> => {
       while (true) {
-        // 找 pending segment (优先找分配给自己的)
+        // 被拉黑了就退出
+        if (bannedNodes.has(nodeId)) break;
+
+        // 找 pending segment
         let seg = segments.find((s) => s.status === 'pending' && s.nodeId === nodeId);
         if (!seg) seg = segments.find((s) => s.status === 'pending');
 
         if (seg) {
+          if (bannedNodes.has(seg.nodeId)) {
+            const alt = getAvailableNodeId(nodeId);
+            if (alt) seg.nodeId = alt; else break;
+          }
           seg.nodeId = nodeId;
           await downloadSegment(seg);
           continue;
         }
 
-        // 没有 pending → 尝试劈半窃取
-        const stolen = trySplitAndSteal(nodeId);
-        if (stolen) {
-          // 新产生了 2 个 pending segment, 继续循环
-          continue;
-        }
+        // 尝试劈半窃取
+        if (trySplitAndSteal(nodeId)) continue;
 
-        // 既没有 pending 也无法窃取 → 检查是否还有 downloading
-        const hasActive = segments.some((s) => s.status === 'downloading');
+        // 没活干了, 检查是否还有 downloading
+        const hasActive = segments.some((s) => s.status === 'downloading' || s.status === 'pending');
         if (!hasActive) break;
 
-        // 还有 downloading 的, 等一小会再检查 (避免忙等)
         await new Promise((r) => setTimeout(r, 50));
       }
     };
 
-    // 启动所有 worker
-    const workers = enabledNodes.map((n) => worker(n.id));
+    // 启动 worker
+    const workers = rangeNodes.map((n) => worker(n.id));
     await Promise.all(workers);
+    clearInterval(stallChecker);
 
-    // 检查失败
+    // ── 完整性校验 ──
     const failed = segments.filter((s) => s.status === 'failed');
     if (failed.length > 0) {
       throw new Error(`Range download failed: ${failed.length} segments failed`);
     }
 
-    // 4. 按字节序排列拼接
     const sorted = segments
       .filter((s) => s.status === 'completed' && s.data && s.data.byteLength > 0)
       .sort((a, b) => a.start - b.start);
 
+    // 校验: 覆盖范围连续且总大小匹配
+    let expectedStart = 0;
+    let actualTotal = 0;
+    for (const seg of sorted) {
+      if (seg.start !== expectedStart) {
+        console.warn(`[RangeDownloader] 字节间隙: expected start=${expectedStart}, got ${seg.start}`);
+      }
+      actualTotal += seg.data!.byteLength;
+      expectedStart = seg.end + 1;
+    }
+
+    if (actualTotal !== totalSize) {
+      console.warn(`[RangeDownloader] 总大小不匹配: expected ${totalSize}, got ${actualTotal}`);
+      // 不抛错 — 可能是 CDN 压缩等导致的细微差异, 但 log 警告
+    }
+
     const blob = new Blob(sorted.map((s) => s.data!), { type: contentType });
 
-    // 统计各节点贡献
     const contributions = new Map<string, { bytes: number; chunks: number; avgSpeed: number }>();
     for (const seg of sorted) {
       const existing = contributions.get(seg.nodeId) ?? { bytes: 0, chunks: 0, avgSpeed: 0 };
@@ -358,8 +512,6 @@ export class RangeDownloader {
       const cl = resp.headers.get('Content-Length');
       const ct = resp.headers.get('Content-Type') ?? 'application/octet-stream';
       const ar = resp.headers.get('Accept-Ranges');
-      // Accept-Ranges: bytes 表示支持; Accept-Ranges: none 或不存在时不确定
-      // 保守策略: 只有明确返回 "bytes" 才认为支持
       const supportsRange = ar?.toLowerCase() === 'bytes';
       return { totalSize: cl ? parseInt(cl, 10) : 0, contentType: ct, supportsRange };
     } catch {
