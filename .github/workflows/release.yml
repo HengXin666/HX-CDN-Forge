@@ -20,9 +20,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
-          # 不设 registry-url — 避免 setup-node 写入空 _authToken 覆盖 OIDC
+
+      - name: Upgrade npm (OIDC requires >= 11.5.1)
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm ci
@@ -36,12 +39,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Configure npm for OIDC publishing
-        run: |
-          npm config set registry https://registry.npmjs.org/
-
       - name: Publish to NPM (OIDC Trusted Publishing)
         run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ''
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
