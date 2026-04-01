@@ -21,8 +21,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
+          # 不设 registry-url — 避免 setup-node 写入空 _authToken 覆盖 OIDC
 
       - name: Install dependencies
         run: npm ci
@@ -35,6 +35,10 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Configure npm for OIDC publishing
+        run: |
+          npm config set registry https://registry.npmjs.org/
 
       - name: Publish to NPM (OIDC Trusted Publishing)
         run: npm publish --access public --provenance
