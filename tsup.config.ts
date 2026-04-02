@@ -18,6 +18,7 @@ export default defineConfig([
   // CLI 工具 (Node.js)
   {
     entry: ['src/cli/split.ts'],
+    outDir: 'dist/cli',
     format: ['cjs'],
     dts: false,
     sourcemap: false,
