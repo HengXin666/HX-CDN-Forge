@@ -1,6 +1,6 @@
 {
   "name": "hx-cdn-forge",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "description": "GitHub CDN proxy with transparent large-file splitting, multi-CDN parallel download, and turbo mode",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
