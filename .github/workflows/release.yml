@@ -36,10 +36,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to NPM (OIDC Trusted Publishing)
+      - name: Publish to NPM
         run: npm publish --access public --provenance
         env:
-          NODE_AUTH_TOKEN: ''
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
