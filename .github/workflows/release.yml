@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: '22.14'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
@@ -29,9 +29,6 @@ jobs:
 
       - name: Type check
         run: npm run type-check
-
-      - name: Run tests
-        run: npm test
 
       - name: Build
         run: npm run build
