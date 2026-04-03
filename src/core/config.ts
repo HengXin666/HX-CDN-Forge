@@ -42,6 +42,7 @@ export function normalizeConfig(config: ForgeConfig): Required<ForgeConfig> {
     turboConcurrentCDNs: config.turboConcurrentCDNs ?? DEFAULTS.turboConcurrentCDNs,
     downloadModeOverrides: config.downloadModeOverrides ?? {},
     enablePreCompression: config.enablePreCompression ?? false,
+    preCompressionStoragePath: config.preCompressionStoragePath ?? config.splitStoragePath ?? '',
   };
 }
 

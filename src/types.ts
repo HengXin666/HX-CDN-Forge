@@ -164,6 +164,18 @@ export interface ForgeConfig {
    * 默认 false (需要数据源支持，因此默认不开启)
    */
   enablePreCompression?: boolean;
+
+  /**
+   * 预压缩文件存储根路径 (info-zip.yaml + .gz/.br 文件)
+   *
+   * 如果不设置，默认与 splitStoragePath 相同 (切片和压缩共用目录)
+   * 如果设置，则预压缩文件从此路径查找，切片文件从 splitStoragePath 查找
+   *
+   * @example
+   * splitStoragePath: 'static/cdn/all',           // 切片 info.yaml
+   * preCompressionStoragePath: 'static/cdn/gzip',  // 压缩 info-zip.yaml + .gz
+   */
+  preCompressionStoragePath?: string;
 }
 
 // ============================================================

@@ -465,10 +465,10 @@ export class ForgeEngine {
    * 例: static/cdn/music/loli.ass/info-zip.yaml
    */
   private async tryGetZipInfo(filePath: string): Promise<ZipInfo | null> {
-    const { splitStoragePath, mappingPrefix } = this.config;
+    const { preCompressionStoragePath, mappingPrefix } = this.config;
 
     // 没有配置存储路径，无法查找
-    if (!splitStoragePath) return null;
+    if (!preCompressionStoragePath) return null;
 
     // 检查缓存
     if (this.zipInfoCache.has(filePath)) {
@@ -477,7 +477,7 @@ export class ForgeEngine {
 
     // 计算 info-zip.yaml 路径
     const mappedPath = this.mapFilePath(filePath, mappingPrefix);
-    const zipInfoPath = `${splitStoragePath}/${mappedPath}/info-zip.yaml`;
+    const zipInfoPath = `${preCompressionStoragePath}/${mappedPath}/info-zip.yaml`;
 
     try {
       const node = this.getCurrentNode() ?? this.getNodes()[0];
@@ -523,12 +523,12 @@ export class ForgeEngine {
     startTime: number,
     onProgress?: (p: DownloadProgress) => void,
   ): Promise<DownloadResult> {
-    const { splitStoragePath, mappingPrefix } = this.config;
+    const { preCompressionStoragePath, mappingPrefix } = this.config;
     const mappedPath = this.mapFilePath(filePath, mappingPrefix);
 
-    // 压缩文件路径: splitStoragePath/mappedPath/compressedFile
-    // 例: static/cdn/music/loli.ass/loli.ass.gz
-    const compressedFilePath = `${splitStoragePath}/${mappedPath}/${zipInfo.compressedFile}`;
+    // 压缩文件路径: preCompressionStoragePath/mappedPath/compressedFile
+    // 例: static/cdn/gzip/music/loli.ass/loli.ass.gz
+    const compressedFilePath = `${preCompressionStoragePath}/${mappedPath}/${zipInfo.compressedFile}`;
 
     const enabledNodes = this.config.nodes.filter((n) => n.enabled !== false);
     const rangeNodes = enabledNodes.filter((n) => n.supportsRange);

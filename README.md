@@ -737,8 +737,9 @@ const config = createForgeConfig(
     turboConcurrentCDNs: 3,  // 极速模式下同时请求的 CDN 数量
 
     // --- 预压缩 ---
-    enablePreCompression: false, // 开启预压缩检测 (配合 hx-cdn-compress CLI)
-    downloadModeOverrides: {},   // 自定义扩展名→下载模式映射 (如 { fbx: 'range' })
+    enablePreCompression: false,       // 开启预压缩检测 (配合 hx-cdn-compress CLI)
+    preCompressionStoragePath: '',      // 预压缩存储路径 (默认同 splitStoragePath)
+    downloadModeOverrides: {},          // 自定义扩展名→下载模式映射 (如 { fbx: 'range' })
 
     // --- 持久化 ---
     storageKey: 'hx-cdn-forge-node', // localStorage 键名
