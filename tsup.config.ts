@@ -15,9 +15,9 @@ export default defineConfig([
     // CSS 提取为 dist/index.css
     injectStyle: false,
   },
-  // CLI 工具 (Node.js)
+  // CLI 工具 (Node.js) — split + compress
   {
-    entry: ['src/cli/split.ts'],
+    entry: ['src/cli/split.ts', 'src/cli/compress.ts'],
     outDir: 'dist/cli',
     format: ['cjs'],
     dts: false,
@@ -28,7 +28,7 @@ export default defineConfig([
     banner: {
       js: '#!/usr/bin/env node',
     },
-    external: ['fs', 'path', 'crypto'],
+    external: ['fs', 'path', 'crypto', 'zlib'],
     treeshake: true,
     splitting: false,
     minify: false,

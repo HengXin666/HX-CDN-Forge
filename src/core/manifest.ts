@@ -5,7 +5,7 @@
  * info.yaml 和 .cache.yaml 结构简单固定，无需完整 YAML parser
  */
 
-import type { SplitInfo, SplitChunkInfo, SplitCache } from '../types';
+import type { SplitInfo, SplitChunkInfo, SplitCache, ZipInfo, CompressionEncoding } from '../types';
 
 // ============================================================
 // 简化 YAML 解析 (仅支持项目使用的子集)
@@ -153,6 +153,87 @@ export function serializeCacheYaml(cache: SplitCache): string {
     `sourceHash: ${cache.sourceHash}`,
     `sourceSize: ${cache.sourceSize}`,
     `generatedAt: "${cache.generatedAt}"`,
+    '',
+  ].join('\n');
+}
+
+// ============================================================
+// info-zip.yaml 解析 / 序列化 (预压缩版本)
+// ============================================================
+
+/**
+ * 解析 info-zip.yaml 文本为 ZipInfo
+ *
+ * 格式示例:
+ * ```yaml
+ * originalName: loli.ass
+ * totalSize: 10610165
+ * mimeType: text/x-ssa
+ * encoding: gzip
+ * compressedFile: loli.ass.gz
+ * compressedSize: 2453142
+ * compressedSha256: abc123...
+ * ratio: 0.23
+ * createdAt: "2026-04-04T00:00:00Z"
+ * ```
+ */
+export function parseInfoZipYaml(text: string): ZipInfo {
+  const lines = text.split('\n').map((l) => l.trimEnd());
+
+  let originalName = '';
+  let totalSize = 0;
+  let mimeType = 'application/octet-stream';
+  let encoding: CompressionEncoding = 'gzip';
+  let compressedFile = '';
+  let compressedSize = 0;
+  let compressedSha256 = '';
+  let ratio = 0;
+  let createdAt = '';
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('originalName:')) {
+      originalName = extractValue(trimmed);
+    } else if (trimmed.startsWith('totalSize:')) {
+      totalSize = parseInt(extractValue(trimmed), 10);
+    } else if (trimmed.startsWith('mimeType:')) {
+      mimeType = extractValue(trimmed);
+    } else if (trimmed.startsWith('encoding:')) {
+      const v = extractValue(trimmed);
+      encoding = (v === 'br' ? 'br' : 'gzip') as CompressionEncoding;
+    } else if (trimmed.startsWith('compressedFile:')) {
+      compressedFile = extractValue(trimmed);
+    } else if (trimmed.startsWith('compressedSize:')) {
+      compressedSize = parseInt(extractValue(trimmed), 10);
+    } else if (trimmed.startsWith('compressedSha256:')) {
+      compressedSha256 = extractValue(trimmed);
+    } else if (trimmed.startsWith('ratio:')) {
+      ratio = parseFloat(extractValue(trimmed));
+    } else if (trimmed.startsWith('createdAt:')) {
+      createdAt = extractValue(trimmed);
+    }
+  }
+
+  return {
+    originalName, totalSize, mimeType, encoding,
+    compressedFile, compressedSize, compressedSha256, ratio, createdAt,
+  };
+}
+
+/**
+ * 序列化 ZipInfo 为 YAML 文本
+ */
+export function serializeInfoZipYaml(info: ZipInfo): string {
+  return [
+    `originalName: ${info.originalName}`,
+    `totalSize: ${info.totalSize}`,
+    `mimeType: ${info.mimeType}`,
+    `encoding: ${info.encoding}`,
+    `compressedFile: ${info.compressedFile}`,
+    `compressedSize: ${info.compressedSize}`,
+    `compressedSha256: ${info.compressedSha256}`,
+    `ratio: ${info.ratio}`,
+    `createdAt: "${info.createdAt}"`,
     '',
   ].join('\n');
 }

@@ -5,6 +5,8 @@
 // ---- Types ----
 export type {
   CDNRegion,
+  DownloadMode,
+  CompressionEncoding,
   LatencyStatus,
   CDNNode,
   CDNNodeWithLatency,
@@ -13,6 +15,7 @@ export type {
   SplitInfo,
   SplitChunkInfo,
   SplitCache,
+  ZipInfo,
   LatencyResult,
   DownloadProgress,
   DownloadResult,
@@ -35,13 +38,31 @@ export {
   getSortedNodesWithLatency,
 } from './core/cdnNodes';
 
-// ---- Core: Manifest (info.yaml / .cache.yaml) ----
+// ---- Core: Manifest (info.yaml / .cache.yaml / info-zip.yaml) ----
 export {
   parseInfoYaml,
   serializeInfoYaml,
   parseCacheYaml,
   serializeCacheYaml,
+  parseInfoZipYaml,
+  serializeInfoZipYaml,
 } from './core/manifest';
+
+// ---- Core: Download Mode Resolver ----
+export {
+  resolveDownloadMode,
+  getExtension,
+  isTextFile,
+  isBinaryFile,
+  getFileTypeLabel,
+} from './core/modeResolver';
+
+// ---- Core: Decompressor ----
+export {
+  decompressBlob,
+  supportsDecompressionStream,
+  supportsEncoding,
+} from './core/decompressor';
 
 // ---- Core: Fetcher Engine ----
 export { ForgeEngine } from './core/fetcher';
@@ -62,6 +83,7 @@ export {
   useCurrentCDNNode,
   useCDNStatus,
   useReqByCDN,
+  useReqByCDNAuto,
 } from './react/CDNContext';
 
 // ---- React: Components ----

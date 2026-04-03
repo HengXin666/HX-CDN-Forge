@@ -15,15 +15,19 @@ import type {
   CDNNode,
   LatencyResult,
   SplitInfo,
+  ZipInfo,
   DownloadProgress,
   DownloadResult,
+  DownloadMode,
   ForgeConfig,
 } from '../types';
 import { normalizeConfig } from './config';
 import { CDNTester, getSortedNodesWithLatency } from './cdnNodes';
-import { parseInfoYaml } from './manifest';
+import { parseInfoYaml, parseInfoZipYaml } from './manifest';
 import { ChunkedFetcher } from './chunkedFetcher';
 import { RangeDownloader } from './rangeDownloader';
+import { resolveDownloadMode } from './modeResolver';
+import { decompressBlob, supportsDecompressionStream } from './decompressor';
 
 // ============================================================
 // ForgeEngine — 核心引擎 (独立于 React，可在任何环境使用)
@@ -47,6 +51,9 @@ export class ForgeEngine {
 
   // info.yaml 缓存: filePath → SplitInfo | null
   private splitInfoCache = new Map<string, SplitInfo | null>();
+
+  // info-zip.yaml 缓存: filePath → ZipInfo | null
+  private zipInfoCache = new Map<string, ZipInfo | null>();
 
   constructor(config: ForgeConfig) {
     this.config = normalizeConfig(config);
@@ -305,6 +312,102 @@ export class ForgeEngine {
     return this.rangeDownloader.download(enabledNodes, this.config.github, filePath, onProgress);
   }
 
+  /**
+   * 🚀 智能下载 — 根据文件扩展名自动选择最优下载策略
+   *
+   * 策略:
+   * - 文本文件 (.ass, .json, .xml, .css, .js 等)
+   *   → split/direct: 享受 CDN gzip/br 压缩, 实际传输量仅 20-30%
+   * - 二进制文件 (.woff2, .png, .mp3, .wasm 等)
+   *   → range: Range 分段并行, 无压缩差异, 省去预切片开销
+   * - 未知扩展名 → split (保守策略)
+   *
+   * 注意: 如果文件有预切片 (info.yaml), 无论推荐什么都优先走切片并行。
+   *
+   * @param filePath - GitHub 仓库中相对于根目录的文件路径
+   * @param onProgress - 进度回调
+   * @returns 下载结果 (包含使用的实际模式信息)
+   *
+   * @example
+   * ```ts
+   * // 自动选择最优模式 — 不用再纠结 reqByCDN / reqByCDNRange / reqByCDNRace
+   * const result = await engine.reqByCDNAuto('static/music/loli.ass');
+   * // → 文本文件, 自动走 split, 享受 gzip 压缩
+   *
+   * const font = await engine.reqByCDNAuto('static/fonts/NotoSans.woff2');
+   * // → 二进制文件, 自动走 range, 多节点 Range 并行
+   * ```
+   */
+  async reqByCDNAuto(
+    filePath: string,
+    onProgress?: (p: DownloadProgress) => void,
+  ): Promise<DownloadResult> {
+    const startTime = performance.now();
+
+    if (!this.initialized) await this.waitReady();
+
+    // 1. 优先检查预切片 — 有切片则无论什么文件类型都走切片并行
+    const splitInfo = await this.tryGetSplitInfo(filePath);
+    if (splitInfo) {
+      return this.downloadSplit(filePath, splitInfo, startTime, onProgress);
+    }
+
+    // 2. 检查预压缩 (info-zip.yaml) — 用户配置开启时才生效
+    if (this.config.enablePreCompression && supportsDecompressionStream()) {
+      const zipInfo = await this.tryGetZipInfo(filePath);
+      if (zipInfo) {
+        return this.downloadPreCompressed(filePath, zipInfo, startTime, onProgress);
+      }
+    }
+
+    // 3. 根据扩展名推断最优模式
+    const mode = resolveDownloadMode(filePath, this.config.downloadModeOverrides);
+
+    switch (mode) {
+      case 'range': {
+        // 二进制文件 → IDM 模式 Range 分段并行
+        const enabledNodes = this.config.nodes.filter((n) => n.enabled !== false);
+        const rangeNodes = enabledNodes.filter((n) => n.supportsRange);
+
+        // 至少需要 1 个支持 Range 的节点, 否则降级
+        if (rangeNodes.length > 0) {
+          return this.rangeDownloader.download(enabledNodes, this.config.github, filePath, onProgress);
+        }
+        // 降级为 race
+        if (enabledNodes.length > 1) {
+          return this.downloadRace(filePath, enabledNodes, startTime);
+        }
+        return this.downloadDirect(filePath, startTime, onProgress);
+      }
+
+      case 'race': {
+        // 竞速模式
+        const enabledNodes = this.config.nodes.filter((n) => n.enabled !== false);
+        if (enabledNodes.length > 1) {
+          return this.downloadRace(filePath, enabledNodes, startTime);
+        }
+        return this.downloadDirect(filePath, startTime, onProgress);
+      }
+
+      case 'split':
+      case 'direct':
+      default:
+        // 文本文件 / 未知 → 直接 GET (享受 CDN gzip 压缩)
+        // 没有预切片时, 标准 GET 本身就能享受 CDN 压缩传输
+        return this.downloadDirect(filePath, startTime, onProgress);
+    }
+  }
+
+  /**
+   * 查询文件路径推荐使用的下载模式 (不执行下载)
+   *
+   * @param filePath - 文件路径
+   * @returns 推荐的下载模式
+   */
+  resolveMode(filePath: string): DownloadMode {
+    return resolveDownloadMode(filePath, this.config.downloadModeOverrides);
+  }
+
   // ============================================================
   // 私有: 分片下载
   // ============================================================
@@ -352,6 +455,127 @@ export class ForgeEngine {
       this.splitInfoCache.set(filePath, null);
       return null;
     }
+  }
+
+  /**
+   * 尝试获取文件的预压缩信息 (info-zip.yaml)
+   *
+   * 路径映射与 info.yaml 相同:
+   *   splitStoragePath + mapFilePath(filePath) + '/info-zip.yaml'
+   * 例: static/cdn/music/loli.ass/info-zip.yaml
+   */
+  private async tryGetZipInfo(filePath: string): Promise<ZipInfo | null> {
+    const { splitStoragePath, mappingPrefix } = this.config;
+
+    // 没有配置存储路径，无法查找
+    if (!splitStoragePath) return null;
+
+    // 检查缓存
+    if (this.zipInfoCache.has(filePath)) {
+      return this.zipInfoCache.get(filePath)!;
+    }
+
+    // 计算 info-zip.yaml 路径
+    const mappedPath = this.mapFilePath(filePath, mappingPrefix);
+    const zipInfoPath = `${splitStoragePath}/${mappedPath}/info-zip.yaml`;
+
+    try {
+      const node = this.getCurrentNode() ?? this.getNodes()[0];
+      if (!node) return null;
+
+      const url = node.buildUrl(this.config.github, zipInfoPath);
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 10_000);
+
+      // info-zip.yaml 是小文件 (< 500B), CDN 自动 gzip 压缩, 浏览器原生解压
+      const resp = await fetch(url, { mode: 'cors', signal: ctrl.signal });
+      clearTimeout(tid);
+
+      if (!resp.ok) {
+        // 404 = 没有预压缩版本
+        this.zipInfoCache.set(filePath, null);
+        return null;
+      }
+
+      const text = await resp.text();
+      const zipInfo = parseInfoZipYaml(text);
+
+      this.zipInfoCache.set(filePath, zipInfo);
+      return zipInfo;
+    } catch {
+      this.zipInfoCache.set(filePath, null);
+      return null;
+    }
+  }
+
+  /**
+   * 下载预压缩文件 (Range 并行) → 拼接 → DecompressionStream 解压
+   *
+   * 流程:
+   * 1. 根据 zipInfo 中的 compressedFile 构建压缩文件的 CDN 路径
+   * 2. 对压缩文件发起 Range 并行下载 (文件是二进制, identity 没问题)
+   * 3. 下载完成后用 DecompressionStream 解压
+   * 4. 返回原始数据
+   */
+  private async downloadPreCompressed(
+    filePath: string,
+    zipInfo: ZipInfo,
+    startTime: number,
+    onProgress?: (p: DownloadProgress) => void,
+  ): Promise<DownloadResult> {
+    const { splitStoragePath, mappingPrefix } = this.config;
+    const mappedPath = this.mapFilePath(filePath, mappingPrefix);
+
+    // 压缩文件路径: splitStoragePath/mappedPath/compressedFile
+    // 例: static/cdn/music/loli.ass/loli.ass.gz
+    const compressedFilePath = `${splitStoragePath}/${mappedPath}/${zipInfo.compressedFile}`;
+
+    const enabledNodes = this.config.nodes.filter((n) => n.enabled !== false);
+    const rangeNodes = enabledNodes.filter((n) => n.supportsRange);
+
+    let rangeResult: DownloadResult;
+
+    if (rangeNodes.length > 0) {
+      // 🚀 核心: 对压缩文件走 Range 并行下载
+      // 压缩文件是二进制 → Accept-Encoding: identity 没问题
+      // 多节点并行 → 传输 compressedSize (如 2MB) 而非 totalSize (如 10MB)
+      rangeResult = await this.rangeDownloader.download(
+        enabledNodes, this.config.github, compressedFilePath,
+        onProgress ? (p) => {
+          // 进度映射: 传输的是压缩数据，但用户视角看到的 total 应该是原始大小
+          // 这里保留真实传输进度，让用户知道实际传输量
+          onProgress({
+            ...p,
+            // 追加注释信息: total 是压缩后大小，原始大小见 zipInfo.totalSize
+          });
+        } : undefined,
+      );
+    } else if (enabledNodes.length > 0) {
+      // 降级: 没有 Range 节点，但仍然下载压缩文件 (单连接)
+      rangeResult = await this.downloadDirect(compressedFilePath, startTime, onProgress);
+    } else {
+      throw new Error('No CDN nodes available');
+    }
+
+    // DecompressionStream 解压
+    const decompressedBlob = await decompressBlob(
+      rangeResult.blob,
+      zipInfo.encoding,
+      zipInfo.totalSize,
+    );
+
+    return {
+      blob: decompressedBlob,
+      arrayBuffer: () => decompressedBlob.arrayBuffer(),
+      totalSize: decompressedBlob.size,
+      totalTime: performance.now() - startTime,
+      contentType: zipInfo.mimeType,
+      usedSplitMode: false,
+      usedParallelMode: rangeResult.usedParallelMode,
+      usedPreCompression: true,
+      compressionEncoding: zipInfo.encoding,
+      nodeContributions: rangeResult.nodeContributions,
+    };
   }
 
   /** 下载切片并拼接 */
@@ -599,6 +823,9 @@ export class ForgeEngine {
   getConfig(): Required<ForgeConfig> { return this.config; }
   isInitialized(): boolean { return this.initialized; }
 
-  /** 清除 info.yaml 缓存 */
-  clearSplitInfoCache(): void { this.splitInfoCache.clear(); }
+  /** 清除 info.yaml / info-zip.yaml 缓存 */
+  clearSplitInfoCache(): void {
+    this.splitInfoCache.clear();
+    this.zipInfoCache.clear();
+  }
 }

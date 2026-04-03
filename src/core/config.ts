@@ -40,6 +40,8 @@ export function normalizeConfig(config: ForgeConfig): Required<ForgeConfig> {
     enableWorkStealing: config.enableWorkStealing ?? DEFAULTS.enableWorkStealing,
     turboMode: config.turboMode ?? DEFAULTS.turboMode,
     turboConcurrentCDNs: config.turboConcurrentCDNs ?? DEFAULTS.turboConcurrentCDNs,
+    downloadModeOverrides: config.downloadModeOverrides ?? {},
+    enablePreCompression: config.enablePreCompression ?? false,
   };
 }
 

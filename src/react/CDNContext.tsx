@@ -186,6 +186,16 @@ export function CDNProvider({
     [],
   );
 
+  // reqByCDNAuto — 智能下载
+  const reqByCDNAuto = useCallback(
+    async (filePath: string, onProgress?: (p: DownloadProgress) => void): Promise<DownloadResult> => {
+      const engine = engineRef.current;
+      if (!engine) throw new Error('ForgeEngine not initialized');
+      return engine.reqByCDNAuto(filePath, onProgress);
+    },
+    [],
+  );
+
   // buildUrl
   const buildUrl = useCallback((filePath: string): string => {
     const engine = engineRef.current;
@@ -211,11 +221,12 @@ export function CDNProvider({
       selectNode,
       testAllNodes,
       reqByCDN,
+      reqByCDNAuto,
       buildUrl,
       getSortedNodes,
     }),
     [config, currentNode, nodes, isTesting, isInitialized, latencyResults,
-     selectNode, testAllNodes, reqByCDN, buildUrl, getSortedNodes],
+     selectNode, testAllNodes, reqByCDN, reqByCDNAuto, buildUrl, getSortedNodes],
   );
 
   return <CDNCtx.Provider value={value}>{children}</CDNCtx.Provider>;
@@ -265,4 +276,25 @@ export function useCDNStatus(): CDNContextValue {
 export function useReqByCDN() {
   const { reqByCDN } = useCDN();
   return reqByCDN;
+}
+
+/**
+ * 获取 reqByCDNAuto 函数 — 🚀 智能下载
+ *
+ * 根据文件扩展名自动选择最优下载策略:
+ * - 文本文件 (.ass, .json, .css, .js) → 享受 CDN gzip/br 压缩
+ * - 二进制文件 (.woff2, .png, .mp3) → Range 多节点并行
+ *
+ * @example
+ * ```tsx
+ * const reqByCDNAuto = useReqByCDNAuto();
+ *
+ * // 自动选择最优模式
+ * const ass = await reqByCDNAuto('static/music/loli.ass');      // → split/direct (gzip 压缩)
+ * const font = await reqByCDNAuto('static/fonts/Noto.woff2');   // → range (并行)
+ * ```
+ */
+export function useReqByCDNAuto() {
+  const { reqByCDNAuto } = useCDN();
+  return reqByCDNAuto;
 }

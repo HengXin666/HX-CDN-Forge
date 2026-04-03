@@ -10,6 +10,15 @@
 /** CDN 节点地区 */
 export type CDNRegion = 'china' | 'asia' | 'global';
 
+/**
+ * 下载模式
+ * - 'split'  — 切片并行 (文本等高压缩率文件最优, CDN 可 gzip/br 传输)
+ * - 'range'  — IDM 风格 Range 分段并行 (已压缩/二进制文件最优)
+ * - 'race'   — 多 CDN 竞速 (中小文件, 延迟敏感)
+ * - 'direct' — 单节点直连 (兜底)
+ */
+export type DownloadMode = 'split' | 'range' | 'race' | 'direct';
+
 /** 延迟状态 */
 export type LatencyStatus = 'idle' | 'testing' | 'success' | 'failed';
 
@@ -129,6 +138,32 @@ export interface ForgeConfig {
    * 默认 3 (即每个分片同时从最快的 3 个 CDN 请求)
    */
   turboConcurrentCDNs?: number;
+
+  // ---- 自动模式选择 ----
+
+  /**
+   * 自定义扩展名 → 下载模式映射 (覆盖内置规则)
+   *
+   * key: 扩展名 (不含点, 小写), value: 下载模式
+   * @example { 'fbx': 'range', 'custom-text': 'split' }
+   */
+  downloadModeOverrides?: Record<string, DownloadMode>;
+
+  // ---- 预压缩 ----
+
+  /**
+   * 是否启用预压缩文件检测 (info-zip.yaml)
+   *
+   * 开启后，reqByCDNAuto 会在检查切片 (info.yaml) 之后、
+   * 再检查 info-zip.yaml 是否存在预压缩版本：
+   * - 有预压缩 → 对压缩文件走 Range 并行下载 → 客户端 DecompressionStream 解压
+   * - 无预压缩 → 继续走原有的 modeResolver 逻辑
+   *
+   * 需要数据源（CI）配合：使用 hx-cdn-compress 预先生成 .gz/.br 文件 + info-zip.yaml
+   *
+   * 默认 false (需要数据源支持，因此默认不开启)
+   */
+  enablePreCompression?: boolean;
 }
 
 // ============================================================
@@ -173,6 +208,39 @@ export interface SplitCache {
   sourceSize: number;
   /** 上次生成时间 */
   generatedAt: string;
+}
+
+// ============================================================
+// 预压缩相关 (info-zip.yaml)
+// ============================================================
+
+/** 预压缩编码类型 */
+export type CompressionEncoding = 'gzip' | 'br';
+
+/**
+ * info-zip.yaml 结构 — 描述一个文件的预压缩版本
+ *
+ * 与 info.yaml (切片) 独立存储，运行时先查 info.yaml → 再查 info-zip.yaml
+ */
+export interface ZipInfo {
+  /** 原始文件名 */
+  originalName: string;
+  /** 原始文件大小 (字节) */
+  totalSize: number;
+  /** 原始文件 MIME 类型 */
+  mimeType: string;
+  /** 压缩编码 ('gzip' | 'br') */
+  encoding: CompressionEncoding;
+  /** 压缩后文件名 (如 "loli.ass.gz") */
+  compressedFile: string;
+  /** 压缩后文件大小 (字节) */
+  compressedSize: number;
+  /** 压缩后文件 SHA-256 */
+  compressedSha256: string;
+  /** 压缩比 (compressedSize / totalSize, 如 0.23) */
+  ratio: number;
+  /** 生成时间 (ISO 8601) */
+  createdAt: string;
 }
 
 // ============================================================
@@ -232,6 +300,10 @@ export interface DownloadResult {
   usedSplitMode: boolean;
   /** 是否使用了并行模式 */
   usedParallelMode: boolean;
+  /** 是否使用了预压缩 + Range 下载 */
+  usedPreCompression?: boolean;
+  /** 预压缩编码 (使用预压缩时才有值) */
+  compressionEncoding?: CompressionEncoding;
   /** 各节点贡献 */
   nodeContributions: Map<string, { bytes: number; chunks: number; avgSpeed: number }>;
 }
@@ -260,6 +332,8 @@ export interface CDNContextValue {
   testAllNodes: () => Promise<LatencyResult[]>;
   /** 核心请求方法 — 对使用者透明 */
   reqByCDN: (filePath: string, onProgress?: (p: DownloadProgress) => void) => Promise<DownloadResult>;
+  /** 🚀 智能下载 — 根据文件扩展名自动选择最优下载策略 */
+  reqByCDNAuto: (filePath: string, onProgress?: (p: DownloadProgress) => void) => Promise<DownloadResult>;
   /** 构建 CDN URL (小文件直接使用) */
   buildUrl: (filePath: string) => string;
   getSortedNodes: () => CDNNodeWithLatency[];

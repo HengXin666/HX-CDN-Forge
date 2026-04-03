@@ -1,12 +1,13 @@
 {
   "name": "hx-cdn-forge",
-  "version": "2.1.9",
-  "description": "GitHub CDN proxy with transparent large-file splitting, multi-CDN parallel download, and turbo mode",
+  "version": "2.2.0",
+  "description": "GitHub CDN proxy with transparent large-file splitting, text pre-compression, multi-CDN parallel download, and turbo mode",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "bin": {
-    "hx-cdn-split": "./dist/cli/split.js"
+    "hx-cdn-split": "./dist/cli/split.js",
+    "hx-cdn-compress": "./dist/cli/compress.js"
   },
   "exports": {
     ".": {
@@ -33,6 +34,8 @@
     "parallel-download",
     "multi-cdn",
     "turbo-mode",
+    "pre-compression",
+    "range-download",
     "react",
     "typescript",
     "china-friendly",
