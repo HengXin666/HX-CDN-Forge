@@ -180,7 +180,10 @@ export class RangeDownloader {
         const resp = await fetch(url, {
           mode: 'cors',
           signal: ctrl.signal,
-          headers: { 'Range': `bytes=${seg.start}-${seg.end}` },
+          headers: {
+            'Range': `bytes=${seg.start}-${seg.end}`,
+            'Accept-Encoding': 'identity',  // 禁止压缩, 确保 Range 请求的字节范围与 probeFile 获取的 totalSize 一致
+          },
         });
         clearTimeout(tid);
 
@@ -473,8 +476,10 @@ export class RangeDownloader {
     }
 
     if (actualTotal !== totalSize) {
-      console.warn(`[RangeDownloader] 总大小不匹配: expected ${totalSize}, got ${actualTotal}`);
-      // 不抛错 — 可能是 CDN 压缩等导致的细微差异, 但 log 警告
+      throw new Error(
+        `[RangeDownloader] 总大小不匹配: expected ${totalSize}, got ${actualTotal}. ` +
+        `文件可能未完整下载，请检查 CDN 节点是否正确支持 Range 请求。`
+      );
     }
 
     const blob = new Blob(sorted.map((s) => s.data!), { type: contentType });
@@ -511,7 +516,12 @@ export class RangeDownloader {
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), 10_000);
     try {
-      const resp = await fetch(url, { method: 'HEAD', mode: 'cors', signal: ctrl.signal });
+      const resp = await fetch(url, {
+        method: 'HEAD',
+        mode: 'cors',
+        signal: ctrl.signal,
+        headers: { 'Accept-Encoding': 'identity' },  // 禁止压缩, 确保 Content-Length 是真实文件大小
+      });
       clearTimeout(tid);
       const cl = resp.headers.get('Content-Length');
       const ct = resp.headers.get('Content-Type') ?? 'application/octet-stream';

@@ -533,13 +533,18 @@ export class ForgeEngine {
       const elapsed = (performance.now() - startTime) / 1000;
       const speed = loaded / Math.max(elapsed, 0.001);
 
+      // 当 CDN 启用 Content-Encoding (gzip/br) 时, Content-Length 是压缩后大小,
+      // 但流式读取拿到的是解压后数据, loaded 会远超 total.
+      // 用 Math.max 动态修正, 确保 percentage 不会超过 100%.
+      const effectiveTotal = Math.max(total, loaded);
+
       onProgress({
         loaded,
-        total,
-        percentage: Math.round((loaded / total) * 10000) / 100,
+        total: effectiveTotal,
+        percentage: Math.min(Math.round((loaded / effectiveTotal) * 10000) / 100, 100),
         speed,
-        eta: speed > 0 ? (total - loaded) / speed : Infinity,
-        completedChunks: loaded >= total ? 1 : 0,
+        eta: speed > 0 ? Math.max((effectiveTotal - loaded) / speed, 0) : Infinity,
+        completedChunks: loaded >= effectiveTotal ? 1 : 0,
         totalChunks: 1,
       });
     }
