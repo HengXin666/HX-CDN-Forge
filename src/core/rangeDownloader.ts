@@ -2,15 +2,17 @@
  * rangeDownloader.ts — IDM 风格多节点 HTTP Range 并行下载
  *
  * 算法:
- * 1. HEAD 请求获取 Content-Length + Accept-Ranges 检测
+ * 1. HEAD 并发竞速探测文件大小 (Promise.any, 取最快成功的节点)
  * 2. 将文件等分为 N 个 segment (N = 可用节点数), 每个节点负责一个
  * 3. 每个节点用 Range: bytes=start-end 下载自己的 segment
- * 4. 当某节点完成 → 找当前正在下载的最大剩余 segment → 从中间劈开:
- *    - 原节点保留前半段 (与已下载部分连续)
- *    - 空闲节点接管后半段
+ * 4. 当某节点完成 → 找当前正在下载的最大剩余 segment → 劈半窃取:
+ *    - 原节点继续传输 (不 abort 连接, 仅缩短 end 并截断多余数据)
+ *    - 空闲节点接管后半段 (新 Range 请求)
  * 5. 慢节点检测: 如果某 segment 下载停滞超过 stallTimeout → abort + 拉黑节点
  *    → 将其未完成部分交给其他可用节点
- * 6. 所有 segment 完成后按字节序拼接 + 完整性校验
+ * 6. Worker 漂移: 被拉黑的 worker 不退出, 自动切换到可用节点继续工作, 保持并行度
+ * 7. 节点分配使用 round-robin 轮询, 多 worker 漂移时避免堆积
+ * 8. 所有 segment 完成后按字节序拼接 + 完整性校验
  *
  * 降级: Content-Length 未知 / 不支持 Range → 回退到普通单连接下载
  */
@@ -32,6 +34,8 @@ interface Segment {
   lastProgressAt: number;  // 上次有数据到达的时间戳 (用于停滞检测)
   retries: number;
   controller?: AbortController;
+  /** 被劈半窃取后 end 被缩短, 流式读取需要提前截断 */
+  splitShrunk?: boolean;
 }
 
 export interface RangeDownloaderOptions {
@@ -88,17 +92,23 @@ export class RangeDownloader {
       return this.downloadSingle(url, fallback.id, 0, 'application/octet-stream', startTime, onProgress);
     }
 
-    // 2. HEAD 探测文件大小 (尝试多个节点, 防止单节点 CORS 失败)
+    // 2. HEAD 探测文件大小 — 并发竞速, 取最快成功的节点结果
+    //    比串行逐个尝试快得多: 串行最坏 N×10s, 竞速只需最快节点的延迟
     let totalSize = 0;
     let contentType = 'application/octet-stream';
-    for (const node of rangeNodes) {
-      const url = node.buildUrl(github, filePath);
-      const probe = await this.probeFile(url);
-      if (probe.totalSize > 0) {
-        totalSize = probe.totalSize;
-        contentType = probe.contentType;
-        break;
-      }
+    try {
+      const probeResult = await Promise.any(
+        rangeNodes.map(async (node) => {
+          const url = node.buildUrl(github, filePath);
+          const probe = await this.probeFile(url);
+          if (probe.totalSize <= 0) throw new Error('probe failed');
+          return probe;
+        }),
+      );
+      totalSize = probeResult.totalSize;
+      contentType = probeResult.contentType;
+    } catch {
+      // 所有节点都失败了, totalSize 保持 0
     }
 
     if (totalSize <= 0) {
@@ -139,9 +149,16 @@ export class RangeDownloader {
     const nodeMap = new Map(rangeNodes.map((n) => [n.id, n]));
     let completedBytes = 0;
 
-    const emitProgress = () => {
+    let lastProgressEmit = 0;
+    const PROGRESS_THROTTLE = 100; // ms, 进度回调最小间隔, 避免高频 UI 重绘
+
+    const emitProgress = (force = false) => {
       if (!onProgress) return;
-      const elapsed = (performance.now() - startTime) / 1000;
+      const now = performance.now();
+      if (!force && now - lastProgressEmit < PROGRESS_THROTTLE) return;
+      lastProgressEmit = now;
+
+      const elapsed = (now - startTime) / 1000;
       const speed = completedBytes / Math.max(elapsed, 0.001);
       const completed = segments.filter((s) => s.status === 'completed').length;
       onProgress({
@@ -155,10 +172,17 @@ export class RangeDownloader {
       });
     };
 
+    let rrIndex = 0;  // round-robin 索引, 用于多 worker 漂移到同一批可用节点时做负载均衡
     const getAvailableNodeId = (prefer?: string): string | null => {
       if (prefer && !bannedNodes.has(prefer)) return prefer;
-      for (const n of rangeNodes) {
-        if (!bannedNodes.has(n.id)) return n.id;
+      // round-robin: 从上次分配位置开始轮询, 避免所有 worker 堆到第一个可用节点
+      const len = rangeNodes.length;
+      for (let i = 0; i < len; i++) {
+        const n = rangeNodes[(rrIndex + i) % len]!;
+        if (!bannedNodes.has(n.id)) {
+          rrIndex = (rrIndex + i + 1) % len;
+          return n.id;
+        }
       }
       return null;
     };
@@ -202,6 +226,8 @@ export class RangeDownloader {
           const reader = resp.body.getReader();
           const chunks: Uint8Array[] = [];
           let received = 0;
+          // needBytes: 当前 segment 需要的字节数 (可能被劈半缩短)
+          const needBytes = () => seg.end - seg.start + 1;
 
           while (true) {
             const { done, value } = await reader.read();
@@ -210,21 +236,44 @@ export class RangeDownloader {
             received += value.byteLength;
             seg.downloadedUpTo = seg.start + received;
             seg.lastProgressAt = performance.now();
+
+            // 如果被劈半窃取缩短了 end, 我们可能已经收够了或超了
+            // 注意: 原 Range 请求范围可能大于缩短后的范围, 服务器仍在发送超出部分
+            if (seg.splitShrunk && received >= needBytes()) {
+              // 收够了, 主动停止读取, abort 剩余传输
+              try { reader.cancel(); } catch {}
+              try { ctrl.abort(); } catch {}
+              break;
+            }
           }
 
-          const buf = new Uint8Array(received);
+          // 如果收到的比需要的多 (被劈半缩短), 截断到 needBytes
+          const need = needBytes();
+          const usable = Math.min(received, need);
+
+          const buf = new Uint8Array(usable);
           let offset = 0;
           for (const c of chunks) {
-            buf.set(c, offset);
-            offset += c.byteLength;
+            const remaining = usable - offset;
+            if (remaining <= 0) break;
+            const slice = remaining >= c.byteLength ? c : c.subarray(0, remaining);
+            buf.set(slice, offset);
+            offset += slice.byteLength;
           }
           seg.data = buf.buffer;
+          seg.downloadedUpTo = seg.start + usable;
         } else {
           seg.data = await resp.arrayBuffer();
+          // 同样处理被劈半缩短的情况
+          const need = seg.end - seg.start + 1;
+          if (seg.data.byteLength > need) {
+            seg.data = seg.data.slice(0, need);
+          }
           seg.downloadedUpTo = seg.start + seg.data.byteLength;
         }
 
-        // ── 完整性: 校验收到的字节数是否等于请求范围 ──
+        // ── 完整性: 校验收到的字节数是否等于当前需要的范围 ──
+        // 注意: end 可能被劈半窃取缩短过, 所以用当前 end 而非原始请求范围
         const expectedSize = seg.end - seg.start + 1;
         const actualSize = seg.data!.byteLength;
         if (actualSize !== expectedSize) {
@@ -233,7 +282,7 @@ export class RangeDownloader {
 
         seg.status = 'completed';
         completedBytes += actualSize;
-        emitProgress();
+        emitProgress(true);  // 段完成时强制触发进度
       } catch (err) {
         clearTimeout(tid);
         seg.controller = undefined;
@@ -299,7 +348,7 @@ export class RangeDownloader {
                 seg.end = seg.downloadedUpTo - 1;
                 seg.status = 'completed';
                 completedBytes += seg.data.byteLength;
-                emitProgress();
+                emitProgress(true);
 
                 // 新 segment: 接管剩余部分
                 segments.push({
@@ -344,6 +393,10 @@ export class RangeDownloader {
     }, this.opts.stallCheckInterval);
 
     // ── 劈半窃取 ──
+    // 空闲 worker 找到最大未完成 segment, 不 abort 原连接:
+    //   原节点继续正常传输 (end 缩短到 splitPoint, 读到此处后自然结束)
+    //   空闲节点接管后半段 (新 Range 请求)
+    // 这比 abort + 重连快, 避免了重新 TLS 握手 + 等首字节
     const trySplitAndSteal = (freeNodeId: string): boolean => {
       let bestSeg: Segment | null = null;
       let bestRemaining = 0;
@@ -368,27 +421,18 @@ export class RangeDownloader {
         return false;
       }
 
-      // abort 原请求
-      try { bestSeg.controller?.abort(); } catch {}
-      bestSeg.controller = undefined;
+      // 不 abort 原连接! 只缩短 bestSeg 的 end,
+      // downloadSegment 的流式读取会在 downloadedUpTo > newEnd 时截断
+      const origEnd = bestSeg.end;
+      bestSeg.end = splitPoint;
+      // 标记被劈过, downloadSegment 在流式读取时需要知道何时提前停止
+      bestSeg.splitShrunk = true;
 
-      // 原节点: 前半 (连续)
-      const origNewSeg: Segment = {
-        id: nextSegId++,
-        start: bestSeg.downloadedUpTo,
-        end: splitPoint,
-        nodeId: bestSeg.nodeId,
-        status: 'pending',
-        downloadedUpTo: bestSeg.downloadedUpTo,
-        lastProgressAt: 0,
-        retries: 0,
-      };
-
-      // 空闲节点: 后半
+      // 空闲节点: 后半段 (新 Range 请求)
       const stolenSeg: Segment = {
         id: nextSegId++,
         start: splitPoint + 1,
-        end: bestSeg.end,
+        end: origEnd,
         nodeId: freeNodeId,
         status: 'pending',
         downloadedUpTo: splitPoint + 1,
@@ -396,44 +440,38 @@ export class RangeDownloader {
         retries: 0,
       };
 
-      // 原 segment 保留已下载部分
-      if (bestSeg.downloadedUpTo > bestSeg.start) {
-        const downloadedSize = bestSeg.downloadedUpTo - bestSeg.start;
-        if (bestSeg.data && bestSeg.data.byteLength >= downloadedSize) {
-          bestSeg.data = bestSeg.data.slice(0, downloadedSize);
-        } else {
-          bestSeg.data = new ArrayBuffer(0);
-        }
-        bestSeg.end = bestSeg.downloadedUpTo - 1;
-        bestSeg.status = 'completed';
-        completedBytes += bestSeg.data.byteLength;
-        emitProgress();
-      } else {
-        bestSeg.status = 'completed';
-        bestSeg.data = new ArrayBuffer(0);
-        bestSeg.end = bestSeg.start - 1;
-      }
-
-      segments.push(origNewSeg, stolenSeg);
+      segments.push(stolenSeg);
       return true;
     };
 
     // ── Worker 协程 ──
-    const worker = async (nodeId: string): Promise<void> => {
-      while (true) {
-        // 被拉黑了就退出
-        if (bannedNodes.has(nodeId)) break;
+    // 每个 worker 是一个持久协程, 节点被拉黑后不退出而是切换到可用节点继续工作
+    // 这样保持并行度: 即使拉黑了一半节点, 所有 worker 仍在运行
+    const worker = async (initialNodeId: string): Promise<void> => {
+      let nodeId = initialNodeId;
 
-        // 找 pending segment
+      while (true) {
+        // 当前节点被拉黑 → 切换到可用节点, 而不是退出
+        if (bannedNodes.has(nodeId)) {
+          const alt = getAvailableNodeId();
+          if (!alt) break;  // 所有节点都拉黑了, 才退出
+          nodeId = alt;
+        }
+
+        // 找 pending segment: 优先找分配给自己的, 再找任意 pending
         let seg = segments.find((s) => s.status === 'pending' && s.nodeId === nodeId);
         if (!seg) seg = segments.find((s) => s.status === 'pending');
 
         if (seg) {
+          // 确保 segment 用的是可用节点
           if (bannedNodes.has(seg.nodeId)) {
             const alt = getAvailableNodeId(nodeId);
-            if (alt) seg.nodeId = alt; else break;
+            if (!alt) break;
+            seg.nodeId = alt;
+          } else {
+            seg.nodeId = nodeId;
           }
-          seg.nodeId = nodeId;
+          nodeId = seg.nodeId;  // worker 跟随 segment 使用的节点
           await downloadSegment(seg);
           continue;
         }
@@ -441,7 +479,7 @@ export class RangeDownloader {
         // 尝试劈半窃取
         if (trySplitAndSteal(nodeId)) continue;
 
-        // 没活干了, 检查是否还有 downloading
+        // 没活干了, 检查是否还有 downloading 或 pending
         const hasActive = segments.some((s) => s.status === 'downloading' || s.status === 'pending');
         if (!hasActive) break;
 
@@ -449,7 +487,7 @@ export class RangeDownloader {
       }
     };
 
-    // 启动 worker
+    // 启动 worker: 每个节点一个, 被拉黑后自动漂移到可用节点
     const workers = rangeNodes.map((n) => worker(n.id));
     await Promise.all(workers);
     clearInterval(stallChecker);
