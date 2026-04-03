@@ -3,12 +3,12 @@ name: Release to NPM
 # ─────────────────────────────────────────────────────────────
 # ⚠️ AI / 维护者注意事项 (请勿随意修改以下配置):
 #
-# 1. 使用 Node 22 + 手动升级 npm 到 >=11.5.1
+# 1. 使用 Node 22.22.1 + 手动升级 npm 到 >=11
 #    Node 22 自带 npm 10.x, 不支持 OIDC Trusted Publishing
 #    必须升级 npm 才能使用 --provenance
 #    不要升级到 Node 24+ (jest + ts-jest 兼容问题)
-#    npm@latest 可能与当前 Node 22 自带 npm 冲突 (promise-retry MODULE_NOT_FOUND)
-#    因此锁定到 npm@11 而非 latest
+#    Node 22.22.2 有 regression: npm install -g 会 MODULE_NOT_FOUND promise-retry
+#    (nodejs/node#62425), 因此锁定到 22.22.1
 #
 # 2. 发布使用 npm OIDC Trusted Publishing, 不需要 NPM_TOKEN
 #    认证由 `permissions: id-token: write` + npmjs.com 上的
@@ -38,7 +38,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.22.1'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
