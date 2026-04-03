@@ -516,18 +516,51 @@ export class RangeDownloader {
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), 10_000);
     try {
-      const resp = await fetch(url, {
+      // 优先使用 Accept-Encoding: identity 获取未压缩的 Content-Length
+      // 但某些 CDN (如 cdn.jsdelivr.net) 对 identity 请求返回 404
+      // 因此需要 fallback 到不带 Accept-Encoding 的请求
+      let resp = await fetch(url, {
         method: 'HEAD',
         mode: 'cors',
         signal: ctrl.signal,
-        headers: { 'Accept-Encoding': 'identity' },  // 禁止压缩, 确保 Content-Length 是真实文件大小
+        headers: { 'Accept-Encoding': 'identity' },
       });
+
+      if (!resp.ok) {
+        // identity 请求失败 (例如 cdn.jsdelivr.net 返回 404)
+        // fallback: 不带 Accept-Encoding, 但此时 Content-Length 可能是压缩后大小
+        const ctrl2 = new AbortController();
+        const tid2 = setTimeout(() => ctrl2.abort(), 10_000);
+        resp = await fetch(url, {
+          method: 'HEAD',
+          mode: 'cors',
+          signal: ctrl2.signal,
+        });
+        clearTimeout(tid2);
+      }
+
       clearTimeout(tid);
+
+      if (!resp.ok) {
+        return { totalSize: 0, contentType: 'application/octet-stream', supportsRange: false };
+      }
+
       const cl = resp.headers.get('Content-Length');
       const ct = resp.headers.get('Content-Type') ?? 'application/octet-stream';
       const ar = resp.headers.get('Accept-Ranges');
+      const ce = resp.headers.get('Content-Encoding');
       const supportsRange = ar?.toLowerCase() === 'bytes';
-      return { totalSize: cl ? parseInt(cl, 10) : 0, contentType: ct, supportsRange };
+
+      let totalSize = cl ? parseInt(cl, 10) : 0;
+
+      // 如果响应带了 Content-Encoding (gzip/br), Content-Length 是压缩后大小
+      // 这种情况下 totalSize 不可信, 返回 0 让调用方跳过此节点尝试下一个
+      if (ce && ce !== 'identity' && totalSize > 0) {
+        console.warn(`[RangeDownloader] probeFile: ${url} 返回了 Content-Encoding: ${ce}, Content-Length (${totalSize}) 是压缩后大小, 跳过`);
+        totalSize = 0;
+      }
+
+      return { totalSize, contentType: ct, supportsRange };
     } catch {
       clearTimeout(tid);
       return { totalSize: 0, contentType: 'application/octet-stream', supportsRange: false };
