@@ -7,6 +7,8 @@ name: Release to NPM
 #    Node 22 自带 npm 10.x, 不支持 OIDC Trusted Publishing
 #    必须升级 npm 才能使用 --provenance
 #    不要升级到 Node 24+ (jest + ts-jest 兼容问题)
+#    npm@latest 可能与当前 Node 22 自带 npm 冲突 (promise-retry MODULE_NOT_FOUND)
+#    因此锁定到 npm@11 而非 latest
 #
 # 2. 发布使用 npm OIDC Trusted Publishing, 不需要 NPM_TOKEN
 #    认证由 `permissions: id-token: write` + npmjs.com 上的
@@ -41,7 +43,7 @@ jobs:
           cache: 'npm'
 
       - name: Upgrade npm for OIDC support
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: npm ci
