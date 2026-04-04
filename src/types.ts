@@ -154,14 +154,19 @@ export interface ForgeConfig {
   /**
    * 是否启用预压缩文件检测 (info-zip.yaml)
    *
-   * 开启后，reqByCDNAuto 会在检查切片 (info.yaml) 之后、
-   * 再检查 info-zip.yaml 是否存在预压缩版本：
+   * 开启后，reqByCDNAuto 会**最先**检查 info-zip.yaml 是否存在预压缩版本：
    * - 有预压缩 → 对压缩文件走 Range 并行下载 → 客户端 DecompressionStream 解压
-   * - 无预压缩 → 继续走原有的 modeResolver 逻辑
+   * - 无预压缩 → 继续检查 info.yaml (切片) → 扩展名推断
+   *
+   * ★ 预压缩是最优下载策略 (优先级高于预切片):
+   * - .gz 文件本身已压缩 → 传输量小
+   * - Range 并行多节点加速 + 兼容 IDM
+   * - vs 预切片 (info.yaml) 是裸数据，Range 下载时 identity 无法享受压缩
    *
    * 需要数据源（CI）配合：使用 hx-cdn-compress 预先生成 .gz/.br 文件 + info-zip.yaml
    *
-   * 默认 false (需要数据源支持，因此默认不开启)
+   * 默认 true — 只要有 preCompressionStoragePath 配置就会尝试查找 info-zip.yaml
+   * 设为 false 可跳过 info-zip.yaml 检测 (节省一次 404 请求)
    */
   enablePreCompression?: boolean;
 

@@ -313,16 +313,21 @@ export class ForgeEngine {
   }
 
   /**
-   * 🚀 智能下载 — 根据文件扩展名自动选择最优下载策略
+   * 🚀 智能下载 — 根据文件类型自动选择最优下载策略
    *
-   * 策略:
-   * - 文本文件 (.ass, .json, .xml, .css, .js 等)
-   *   → split/direct: 享受 CDN gzip/br 压缩, 实际传输量仅 20-30%
-   * - 二进制文件 (.woff2, .png, .mp3, .wasm 等)
-   *   → range: Range 分段并行, 无压缩差异, 省去预切片开销
-   * - 未知扩展名 → split (保守策略)
+   * 决策优先级:
+   * 1. ★ 有预压缩 (info-zip.yaml) → **Range 并行下载 .gz + DecompressionStream 解压**
+   *    最优策略: 压缩后传输量小 + 多节点 Range 并行加速 + 兼容 IDM
+   * 2. 有预切片 (info.yaml) → split 并行
+   *    注意: 切片是裸数据，Range 下载时 identity 无法享受压缩
+   * 3. 根据扩展名推断:
+   *    - 二进制文件 (.woff2, .png, .mp3, .wasm 等) → range: Range 分段并行
+   *    - 文本文件 (.ass, .json, .xml, .css, .js 等) → direct: CDN gzip 压缩
+   *    - 未知 → split (保守策略)
    *
-   * 注意: 如果文件有预切片 (info.yaml), 无论推荐什么都优先走切片并行。
+   * 推荐: 对大文本文件 (>100KB) 使用 hx-cdn-compress 预压缩,
+   * 配合 enablePreCompression: true + preCompressionStoragePath,
+   * 即可自动走 Range 并行 + 客户端解压的最优路径。
    *
    * @param filePath - GitHub 仓库中相对于根目录的文件路径
    * @param onProgress - 进度回调
@@ -332,7 +337,9 @@ export class ForgeEngine {
    * ```ts
    * // 自动选择最优模式 — 不用再纠结 reqByCDN / reqByCDNRange / reqByCDNRace
    * const result = await engine.reqByCDNAuto('static/music/loli.ass');
-   * // → 文本文件, 自动走 split, 享受 gzip 压缩
+   * // → 有 info-zip.yaml → Range 并行下载 .gz + 解压 (最优!)
+   * // → 无预压缩 → 有 info.yaml → split 并行
+   * // → 都没有 → direct, 享受 CDN gzip
    *
    * const font = await engine.reqByCDNAuto('static/fonts/NotoSans.woff2');
    * // → 二进制文件, 自动走 range, 多节点 Range 并行
@@ -346,13 +353,10 @@ export class ForgeEngine {
 
     if (!this.initialized) await this.waitReady();
 
-    // 1. 优先检查预切片 — 有切片则无论什么文件类型都走切片并行
-    const splitInfo = await this.tryGetSplitInfo(filePath);
-    if (splitInfo) {
-      return this.downloadSplit(filePath, splitInfo, startTime, onProgress);
-    }
-
-    // 2. 检查预压缩 (info-zip.yaml) — 用户配置开启时才生效
+    // 1. ★ 优先检查预压缩 (info-zip.yaml) — 最优策略
+    //    .gz 文件本身已压缩 → 传输量小
+    //    + 多节点 Range 并行加速 + 兼容 IDM
+    //    vs info.yaml 切片是裸数据，Range 下载时 identity 无法享受压缩
     if (this.config.enablePreCompression && supportsDecompressionStream()) {
       const zipInfo = await this.tryGetZipInfo(filePath);
       if (zipInfo) {
@@ -360,7 +364,13 @@ export class ForgeEngine {
       }
     }
 
-    // 3. 根据扩展名推断最优模式
+    // 2. 检查预切片 (info.yaml) — 有切片则走切片并行
+    const splitInfo = await this.tryGetSplitInfo(filePath);
+    if (splitInfo) {
+      return this.downloadSplit(filePath, splitInfo, startTime, onProgress);
+    }
+
+    // 3. 兜底: 根据扩展名推断最优模式 (无预压缩、无预切片时)
     const mode = resolveDownloadMode(filePath, this.config.downloadModeOverrides);
 
     switch (mode) {

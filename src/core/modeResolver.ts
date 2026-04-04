@@ -1,11 +1,18 @@
 /**
- * modeResolver.ts — 根据文件扩展名自动选择最优下载模式
+ * modeResolver.ts — 根据文件扩展名自动选择下载模式 (兜底策略)
  *
- * 原理:
+ * 注意: 此模块仅在 reqByCDNAuto() 中作为「无预压缩、无预切片」时的兜底策略。
+ * 完整决策优先级:
+ *   1. ★ 有预压缩 (info-zip.yaml) → Range 并行下载 .gz + DecompressionStream 解压
+ *      最优策略: .gz 已压缩传输量小 + Range 并行加速 + 兼容 IDM
+ *   2. 有预切片 (info.yaml) → split 并行
+ *      注意: 切片是裸数据，Range 下载时 identity 无法享受压缩
+ *   3. 本模块: 根据扩展名推断 (兜底)
+ *
+ * 扩展名推断规则:
  * - 文本类文件 (ass, json, xml, csv, html, css, js, ts, md, txt, yaml, svg 等)
- *   → gzip/br 压缩率极高 (70-90%), 标准 GET 可享受压缩传输
- *   → 切片模式 (split) 最优: 每个 chunk 都是标准 GET → CDN 自动压缩
- *   → Range 模式必须 Accept-Encoding: identity 禁止压缩, 全量裸传, 慢 3-5x
+ *   → direct: 标准 GET 享受 CDN gzip/br 压缩传输
+ *   → 如需并行，建议使用 hx-cdn-compress 生成预压缩版本
  *
  * - 已压缩/二进制文件 (woff2, wasm, mp3, mp4, zip, png, jpg 等)
  *   → gzip 几乎无法再压缩, 两种模式传输量相同

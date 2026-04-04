@@ -164,9 +164,9 @@ export async function compressFile(opts: CompressOptions): Promise<void> {
 
   console.log(`\n✅ 完成! ${formatSize(originalData.length)} → ${formatSize(compressedData.length)} (${(ratio * 100).toFixed(0)}%)`);
   console.log(`\n前端配置:`);
-  console.log(`  enablePreCompression: true`);
-  console.log(`  splitStoragePath: '${outputDir}'`);
+  console.log(`  preCompressionStoragePath: '${outputDir}'  // ← 指定预压缩存储路径即可`);
   console.log(`  mappingPrefix: '${mappingPrefix}'`);
+  console.log(`  # enablePreCompression 默认 true，无需额外设置`);
 }
 
 // ============================================================
@@ -239,8 +239,8 @@ hx-cdn-compress — HX-CDN-Forge 文件预压缩工具
 
 前端配置:
   const config = createForgeConfig(github, {
-    enablePreCompression: true,    // ← 开启预压缩检测
-    splitStoragePath: 'static/cdn',
+    // enablePreCompression 默认 true，无需额外设置
+    preCompressionStoragePath: 'static/cdn',  // ← 指定预压缩存储路径
     mappingPrefix: 'static',
   });
 `.trim());

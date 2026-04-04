@@ -271,7 +271,7 @@ static/cdn/music/loli.ass/
 └── .cache.yaml       ← 增量更新检测
 ```
 
-> 💡 预压缩与切片可以共存: 同一文件目录下可同时有 `info.yaml` (切片) 和 `info-zip.yaml` (预压缩)，运行时 `info.yaml` 优先级更高。
+> 💡 预压缩与切片可以共存: 同一文件目录下可同时有 `info.yaml` (切片) 和 `info-zip.yaml` (预压缩)，运行时 `info-zip.yaml` 优先级更高（已压缩 + Range 并行更优）。
 
 ---
 
@@ -444,32 +444,61 @@ const result = await engine.reqByCDNRange('static/fonts/NotoSansSC.ttf', (p) => 
 
 ### 🧠 智能模式选择 (Auto Mode)
 
-`reqByCDNAuto()` 根据文件扩展名自动选择最优下载策略，**不用再纠结该调哪个方法**：
+`reqByCDNAuto()` 自动选择最优下载策略，**不用再纠结该调哪个方法**：
 
 ```
-reqByCDNAuto("static/music/loli.ass")          → 文本文件 → split/direct (CDN gzip 压缩)
-reqByCDNAuto("static/fonts/NotoSans.woff2")     → 二进制文件 → range (Range 并行)
-reqByCDNAuto("data/config.json")                 → 文本文件 → split/direct
-reqByCDNAuto("lib/module.wasm")                  → 二进制文件 → range
+决策优先级:
+
+1. ★ 有预压缩 (info-zip.yaml) → Range 并行下载 .gz + 解压 (最优!)
+   .gz 已压缩传输量小 + Range 并行加速 + 兼容 IDM
+2. 有预切片 (info.yaml)  → split 并行
+   注意: 切片是裸数据，Range 下载时无法享受压缩
+3. 根据扩展名推断:
+   - 二进制文件 (.woff2, .png, .mp3) → range (Range 并行)
+   - 文本文件 (.ass, .json, .css)    → direct (CDN gzip)
 ```
 
-**为什么需要区分？**
+**★ 预压缩 + Range 并行是最优策略:**
 
-| | 文本文件 (.ass/.json/.css) | 二进制文件 (.woff2/.png/.mp3) |
-|---|---|---|
-| CDN gzip 压缩率 | **70-90%** (10MB → ~2MB) | **~0%** (已压缩) |
-| Range 模式 `Accept-Encoding` | ❌ 必须 `identity` 禁止压缩 | 无影响 |
-| **最优策略** | **split** — 享受 CDN 压缩 | **range** — Range 并行 |
+| | direct (CDN gzip) | split (预切片) | **Range + 预压缩** |
+|---|---|---|---|
+| 传输量 | 小 (CDN 自动压缩) | **大** (裸数据, identity) | **小** (预压缩 .gz) |
+| 并行度 | ❌ 单连接 | ✅ 多节点并行 | ✅ **多节点 Range 并行** |
+| 预处理 | 无需 | 需要预切片 | 需要预压缩 |
+| IDM 兼容 | — | — | ✅ 标准 Range |
+| **综合效率** | 一般 | 中 (大传输量) | **最优** |
 
 ```ts
-// 🚀 推荐: 一个方法搞定一切
+// 🚀 一个方法搞定一切
 const ass = await engine.reqByCDNAuto('static/music/loli.ass');
+// → 有 info-zip.yaml → Range 并行下载 .gz + DecompressionStream 解压 (最优!)
+// → 无预压缩 → direct, 享受 CDN gzip
+
 const font = await engine.reqByCDNAuto('static/fonts/NotoSans.woff2');
+// → 二进制文件 → Range 多节点并行
 
 // React Hook
 const reqByCDNAuto = useReqByCDNAuto();
 const result = await reqByCDNAuto('static/music/loli.ass');
 ```
+
+**启用预压缩 (推荐):**
+
+```ts
+const config = createForgeConfig(
+  { user: 'HengXin666', repo: 'HXLoLi-Music', ref: 'HX-20260404-abc123' },
+  {
+    enablePreCompression: true,                      // 默认 true，启用预压缩检测
+    preCompressionStoragePath: 'static/cdn/gzip',    // 预压缩文件存储路径
+    splitStoragePath: 'static/cdn/all',              // 切片文件存储路径
+    mappingPrefix: 'static',
+  },
+);
+```
+
+> 💡 `enablePreCompression` 默认为 `true`。只要配置了 `preCompressionStoragePath`，
+> `reqByCDNAuto()` 就会自动检测 `info-zip.yaml` 并走 Range + 预压缩路径。
+> 如果不需要预压缩（数据源没有生成 .gz），设为 `false` 可避免额外的 404 请求。
 
 **自定义扩展名映射:**
 
@@ -517,7 +546,7 @@ resolveDownloadMode('model.fbx', { fbx: 'range' }); // → 'range' (自定义)
 | 模式 | 传输量 | 并发 | 解压开销 | 需预处理 |
 |------|--------|------|----------|----------|
 | `direct` | ~2MB (CDN gzip) | ❌ 单连接 | 0ms (浏览器原生) | 无 |
-| `split` (有切片) | ~2MB (CDN gzip) | ✅ 多连接 | 0ms (浏览器原生) | CI 切片 |
+| `split` (有切片) | **10MB** (裸数据, identity) | ✅ 多连接 | 0ms | CI 切片 |
 | `range` | **10MB** (禁压缩) | ✅ 多节点 | 0ms | 无 |
 | **预压缩 + range** | **~2MB** | **✅ 多节点** | **~100ms** | CI 压缩 |
 
@@ -590,10 +619,10 @@ const result = await reqByCDNAuto('static/music/loli.ass');
 ```
 reqByCDNAuto(filePath)
   │
-  ├─ 有预切片 (info.yaml)?     → 走 split 并行 (最高优先级)
-  │
   ├─ enablePreCompression &&
-  │  有预压缩 (info-zip.yaml)? → Range 并行下载 .gz + DecompressionStream 解压
+  │  有预压缩 (info-zip.yaml)? → ★ Range 并行下载 .gz + DecompressionStream 解压 (最优)
+  │
+  ├─ 有预切片 (info.yaml)?     → 走 split 并行
   │
   └─ 无预处理 → 检查扩展名
        ├─ 文本类  → direct (CDN gzip, 浏览器原生解压)
@@ -737,7 +766,7 @@ const config = createForgeConfig(
     turboConcurrentCDNs: 3,  // 极速模式下同时请求的 CDN 数量
 
     // --- 预压缩 ---
-    enablePreCompression: false,       // 开启预压缩检测 (配合 hx-cdn-compress CLI)
+    enablePreCompression: true,         // ★ 开启预压缩检测 (默认 true, 最高优先级)
     preCompressionStoragePath: '',      // 预压缩存储路径 (默认同 splitStoragePath)
     downloadModeOverrides: {},          // 自定义扩展名→下载模式映射 (如 { fbx: 'range' })
 
